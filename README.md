@@ -24,7 +24,7 @@ The Personal Finance Education Platform is a web application that empowers users
 - **Dynamic Dashboard:**  
   Displays personalized metrics, learning progress, and actionable insights in a user-friendly interface.
 
-# Personal Finance Education Platform – Team Roles and Responsibilities
+# Team Roles and Responsibilities
 
 ## Janvi
 - Set up and manage Airflow pipelines for data ingestion and transformation.
