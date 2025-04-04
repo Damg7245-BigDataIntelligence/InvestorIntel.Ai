@@ -1,5 +1,8 @@
 # Personal Finance Education Platform
 
+# Documentation
+- **Documentation:** [Codelab/Documentation Link](https://docs.google.com/document/d/1c8ftZoBDZBQusLQGET5FMpD3fXuemJtR-89r3nvXCvc/edit?tab=t.0)
+
 ## Overview
 
 The Personal Finance Education Platform is a web application that empowers users to improve their financial literacy through personalized, data-driven learning. The platform integrates real-time economic data, curated educational videos (with automated transcription), and interactive financial tools to provide an engaging and tailored financial education experience.
