@@ -1,0 +1,9 @@
+# common
+dotenv
+boto3
+pandas
+
+#growjo scraper
+selenium
+bs4
+webdriver_manager
