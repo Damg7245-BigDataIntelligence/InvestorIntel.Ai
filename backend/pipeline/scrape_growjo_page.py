@@ -11,15 +11,13 @@ from dotenv import load_dotenv
 import os
 import io
 
-def scrape_growjo_data():
-
+def growjo_login():
     # Load environment variables
     load_dotenv()
     GROWJO_EMAIL = os.getenv("GROWJO_EMAIL")
     GROWJO_PASSWORD = os.getenv("GROWJO_PASSWORD")
     if not GROWJO_EMAIL or not GROWJO_PASSWORD:
         raise ValueError("Please set GROWJO_EMAIL and GROWJO_PASSWORD in your .env file.")
-
 
     # Set up Selenium WebDriver options
     options = webdriver.ChromeOptions()
@@ -31,126 +29,119 @@ def scrape_growjo_data():
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_argument("--window-size=1920,1080")
-
     prefs = {
         "profile.managed_default_content_settings.images": 2,
         "profile.managed_default_content_settings.fonts": 2,
     }
     options.add_experimental_option("prefs", prefs)
-
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36")
-
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
-    # Open the login page
+    # Open login page
     driver.get("https://growjo.com/login")
-
-    # Wait for the input fields
     wait = WebDriverWait(driver, 10)
     email_input = wait.until(EC.presence_of_element_located((By.NAME, "email")))
     password_input = wait.until(EC.presence_of_element_located((By.NAME, "password")))
-
-    # Fill in credentials
     email_input.send_keys(GROWJO_EMAIL)
     password_input.send_keys(GROWJO_PASSWORD)
-
-    # Click the "Sign In" button using its visible text
     sign_in_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[text()='Sign In']")))
     sign_in_button.click()
-
     time.sleep(10)
+    return wait, driver
 
-    # Wait for the dashboard or tab area to load
+def select_company_country(wait):
+    # Navigate to the Companies tab
     companies_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, 'nav-link') and text()='Companies']")))
     companies_tab.click()
+    time.sleep(8)
 
-    # Short wait to ensure dropdown becomes available
-    time.sleep(5)
+    # Clear all filters if present
+    try:
+        clear_all_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[@href='/search' and contains(text(),'Clear All')]")))
+        clear_all_button.click()
+        print("🧹 Cleared all filters")
+        time.sleep(5)
+    except Exception as e:
+        print("⚠️ Could not find or click the 'Clear All' button:", e)
 
-    # Click the "Select Country" dropdown
+    # Select the country from the dropdown
     dropdown_placeholder = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'select__placeholder') and contains(text(),'Select Country')]")))
     dropdown_placeholder.click()
-
-    # Wait for all country options to load
     options_list = wait.until(EC.presence_of_all_elements_located((By.XPATH, "//div[contains(@class, 'select__option')]")))
-
-    # Select the first option — United States
-    options_list[0].click()  # United States is first
+    options_list[0].click()
     print("✅ Selected 'United States'")
+    time.sleep(20)
 
-    # Optional: sleep to observe before ending the script
-    time.sleep(5)
+
+def scrape_growjo_data():
+    wait, driver = growjo_login()
+    select_company_country(wait)
 
     # Step 3: Scrape multiple pages
     all_rows = []
     headers = []
-    cnt=0
+    time.sleep(2)
+    first_rows = []
 
+    cnt = 1  # Start at page 1
     while True:
+        # Explicitly wait for the current table to load
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'table.cstm-table')))
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         table = soup.find('table', {'class': 'cstm-table'})
 
-        # Get headers once
         if not headers:
             headers = [th.text.strip() for th in table.find('thead').find_all('th')]
 
-        # Extract current page's first row rank to detect page change later
-        first_rank = table.find('tbody').find('tr').find('td').text.strip()
+        first_row_text = table.find('tbody').find('tr').text.strip()
+        while first_row_text in first_rows:
+            print("⏳ Waiting for new data to load...")
+            time.sleep(1)
+             # Refresh the page source
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            table = soup.find('table', {'class': 'cstm-table'})
+            first_row_text = table.find('tbody').find('tr').text.strip()
 
-        # Extract rows
+        first_rows.append(first_row_text)
+
+
+        # Your scraping logic here
         for tr in table.find('tbody').find_all('tr'):
             cells = tr.find_all('td')
             row = []
-
             for idx, cell in enumerate(cells):
                 if idx == 1:
                     anchors = cell.find_all('a')
-                    full_name = None
-                    for a in anchors:
-                        href = a.get('href')
-                        if href and "/company/" in href:
-                            full_name = href.split('/')[-1].replace('_', ' ')
-                            break
-                    row.append(full_name if full_name else cell.text.strip())
+                    full_name = next((a.get('href').split('/')[-1].replace('_', ' ')
+                                    for a in anchors if a.get('href') and "/company/" in a.get('href')),
+                                    cell.text.strip())
+                    row.append(full_name)
                 else:
                     row.append(cell.text.strip())
             all_rows.append(row)
-        
-        #time.sleep(1)
-        # Pagination check
-        next_li = soup.find('li', class_='next')
-        if next_li and next_li.find('a') and next_li.find('a').get('href'):
-            try:
-                next_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//li[@class='next']/a[@href]")))
-                driver.execute_script("arguments[0].click();", next_button)
-                time.sleep(1)  # Wait for the next page to load
-            except Exception as e:
-                print("❌ Failed to click next or wait for new data:", e)
-                break
-        else:
-            print("✅ Reached the last page — exiting loop.")
+
+        print(f"📄 Page {cnt} scraped.")
+        cnt += 1
+
+        # Find and click "Next" button reliably
+        try:
+            next_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//li[@class='next']/a[@href]")))
+            driver.execute_script("arguments[0].click();", next_button)
+            time.sleep(3)
+        except Exception as e:
+            print(f"✅ Reached last page or pagination error: {e}")
             break
 
-        cnt += 1
-        print(f"📄 Page {cnt + 1} scraped.")
-
-        # if cnt == 10:
-        #     print("✅ Scraped 10 pages — exiting loop.")
-        #     break
-
-
-
-    # Step 4: Save to DataFrame and CSV
+    # Save to CSV
     df = pd.DataFrame(all_rows, columns=headers)
-    print(df)
-    df.to_csv("growjo_companies_usa_all_pages.csv", index=False)
+    df.to_csv("new_pipeline.csv", index=False)
+    # print(f"✅ Saved data to: {filename}")
 
-    driver.quit()    
+    # Cleanup
+    driver.quit()
 
-    # Convert to CSV in-memory
+    # In-memory CSV
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
-    csv_content = csv_buffer.getvalue().encode()  # convert to binary content
+    return csv_buffer.getvalue().encode()
 
-    return csv_content

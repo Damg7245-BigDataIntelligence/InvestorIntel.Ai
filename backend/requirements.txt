@@ -7,3 +7,6 @@ pandas
 selenium
 bs4
 webdriver_manager
+
+pyarrow<19.0.0
+snowflake-connector-python
