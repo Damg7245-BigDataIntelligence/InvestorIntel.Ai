@@ -4,6 +4,7 @@ import os
 import base64
 import io
 import json
+import traceback
 from PIL import Image
 
 # Set page configuration
@@ -50,6 +51,13 @@ def apply_custom_styling():
         border-radius: 8px;
         margin-bottom: 15px;
         border-left: 4px solid #1E3A8A;
+    }
+    .ai-analysis {
+        background-color: #f0f7ff;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #1E88E5;
+        margin-bottom: 30px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -163,28 +171,80 @@ if st.session_state.page == 'upload':
                         if "embedding_status" in result:
                             embedding_status = result["embedding_status"]
                             if embedding_status == "success":
-                                st.success("✅ Embeddings successfully stored in Pinecone")
+                                st.success("✅ Embedding successfully stored in Pinecone")
                             elif embedding_status == "failed":
-                                st.warning("⚠️ Failed to store embeddings in Pinecone")
+                                st.warning("⚠️ Failed to store embedding in Pinecone")
                             elif embedding_status == "skipped":
                                 st.info("ℹ️ Embedding storage skipped - Pinecone not configured")
                             else:
-                                st.error(f"❌ Error storing embeddings: {embedding_status}")
+                                st.error(f"❌ Error storing embedding: {embedding_status}")
                     else:
                         st.error(f"Error: {response.status_code} - {response.text}")
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
+                    st.exception(e)
 
 # SEARCH PAGE
 elif st.session_state.page == 'search':
     st.title("Search Startup Database")
     st.write("Search for similar startups in our database based on your criteria.")
     
+    # Debug expander for troubleshooting
+    with st.expander("Debug Information", expanded=False):
+        st.write("This section shows debugging information for troubleshooting.")
+        st.write("Check this area if search results or AI analysis are not displaying correctly.")
+        if 'debug_info' in st.session_state:
+            st.json(st.session_state.debug_info)
+        else:
+            st.write("No debug information available yet.")
+    
+    # Initialize session state for startup list if not exists
+    if 'startup_list' not in st.session_state:
+        st.session_state.startup_list = []
+        # Fetch startup list by using the existing search endpoint with a generic query
+        try:
+            with st.status("Fetching startup list..."):
+                # Use a simple query that would match most documents
+                response = requests.get(
+                    "http://localhost:8000/search-startups",
+                    params={"query": "startup", "top_k": 100, "generate_ai_response": False}  # Get up to 100 results
+                )
+                
+                if response.status_code == 200:
+                    results = response.json().get("results", [])
+                    st.write(f"Found {len(results)} startups.")
+                    
+                    # Extract unique startup names
+                    startup_names = set()
+                    for result in results:
+                        startup_name = result.get("startup_name")
+                        if startup_name:
+                            startup_names.add(startup_name)
+                    
+                    # Add "All" option and sort the list
+                    st.session_state.startup_list = ["All"] + sorted(list(startup_names))
+                    st.write(f"Extracted {len(startup_names)} unique startup names.")
+                else:
+                    st.warning(f"Could not fetch startup list from server. Status code: {response.status_code}")
+                    st.text(f"Response: {response.text}")
+                    st.session_state.startup_list = ["All"]
+        except Exception as e:
+            st.warning(f"Error fetching startup list: {str(e)}")
+            st.session_state.startup_list = ["All"]
+    
     # Search filters
     col1, col2 = st.columns(2)
     
     with col1:
         search_query = st.text_input("Search Query", placeholder="Enter keywords to search for...")
+        
+        # Startup name filter
+        startup_filter = st.selectbox(
+            "Filter by Startup",
+            options=st.session_state.startup_list,
+            index=0
+        )
+        
         industry_filter = st.selectbox(
             "Filter by Industry",
             options=["All", "Travel", "Food", "Marketing", "Health/Wellness", "Transportation"],
@@ -198,6 +258,9 @@ elif st.session_state.page == 'search':
             index=0
         )
         top_k = st.slider("Number of Results", min_value=1, max_value=20, value=5)
+        
+        # Option to enable/disable AI response
+        generate_ai = st.checkbox("Generate AI Analysis", value=True)
     
     # Search button
     if st.button("Search"):
@@ -209,7 +272,8 @@ elif st.session_state.page == 'search':
                     # Prepare query parameters
                     params = {
                         "query": search_query,
-                        "top_k": top_k
+                        "top_k": top_k,
+                        "generate_ai_response": generate_ai
                     }
                     
                     # Add optional filters
@@ -218,63 +282,149 @@ elif st.session_state.page == 'search':
                     
                     if investment_status != "All":
                         params["invested"] = investment_status.lower()
-                    
-                    # Send to FastAPI backend
-                    response = requests.get(
-                        "http://localhost:8000/search-startups",
-                        params=params
-                    )
-                    
-                    if response.status_code == 200:
-                        results = response.json()
                         
-                        if not results.get("results"):
-                            st.info("No matching startups found. Try adjusting your search criteria.")
-                        else:
-                            st.success(f"Found {len(results['results'])} matching startups")
+                    if startup_filter != "All":
+                        params["startup_name"] = startup_filter
+                    
+                    # Display request info for debugging
+                    with st.status("Sending search request to API..."):
+                        st.write(f"Endpoint: http://localhost:8000/search-startups")
+                        st.write(f"Parameters: {params}")
+                        
+                        # Send to FastAPI backend
+                        response = requests.get(
+                            "http://localhost:8000/search-startups",
+                            params=params
+                        )
+                        
+                        # Store the response for debugging
+                        st.session_state.debug_info = {
+                            "request": {
+                                "url": "http://localhost:8000/search-startups",
+                                "params": params
+                            },
+                            "response": {
+                                "status_code": response.status_code,
+                                "headers": dict(response.headers),
+                                "has_ai_answer": "ai_answer" in response.json() if response.status_code == 200 else False
+                            }
+                        }
+                        
+                        if response.status_code == 200:
+                            results = response.json()
                             
-                            # Display search results
-                            for i, result in enumerate(results["results"]):
-                                with st.container():
-                                    st.markdown(f"""
-                                    <div class="search-result">
-                                        <h3>{result.get('startup_name', 'Unknown Startup')}</h3>
-                                        <p><strong>Industry:</strong> {result.get('industry', 'Not specified')}</p>
-                                        <p><strong>Investment Status:</strong> {'Invested' if result.get('invested') == 'yes' else 'Not Invested'}</p>
-                                        <p><strong>Match Score:</strong> {result.get('score', 0):.2f}</p>
-                                        <p><strong>Chunk Type:</strong> {result.get('chunk_type', 'Unknown')}</p>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    with st.expander("View Content"):
-                                        st.markdown(result.get('content', 'No content available'))
-                                    
-                                    # Add button to update investment status
-                                    if st.button(f"{'✓ Mark as Invested' if result.get('invested') != 'yes' else '✗ Mark as Not Invested'}", key=f"invest_btn_{i}"):
-                                        new_status = "no" if result.get('invested') == 'yes' else "yes"
-                                        update_response = requests.post(
-                                            "http://localhost:8000/update-investment-status",
-                                            data={
-                                                "startup_name": result.get('startup_name'),
-                                                "status": new_status
-                                            }
-                                        )
-                                        if update_response.status_code == 200:
-                                            st.success(f"Updated investment status for {result.get('startup_name')}")
-                                            st.experimental_rerun()
-                                        else:
-                                            st.error(f"Failed to update investment status: {update_response.text}")
+                            # Add full response data for debugging
+                            if "debug_info" in st.session_state:
+                                st.session_state.debug_info["response"]["data"] = results
+                            
+                            # Display raw JSON for debugging in the expander
+                            st.write("API response received.")
+                    
+                    # Display raw JSON for debugging
+                    with st.expander("View API Response JSON", expanded=False):
+                        st.json(results)
+                    
+                    if not results.get("results"):
+                        st.info("No matching startups found. Try adjusting your search criteria.")
                     else:
-                        st.error(f"Error: {response.status_code} - {response.text}")
+                        # If AI response is enabled and present in results
+                        if generate_ai and "ai_answer" in results and results["ai_answer"]:
+                            st.subheader("AI Analysis")
+                            st.write("Based on your query and the search results, here's an AI analysis:")
+                            
+                            # Use custom styled container for AI analysis
+                            st.markdown(f"""
+                            <div class="ai-analysis">
+                            {results["ai_answer"]}
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Add a separator
+                            st.markdown("---")
+                        elif generate_ai:
+                            st.warning("AI analysis was requested but not returned in the response.")
+                            if "ai_answer" in results:
+                                st.write("AI answer field exists but is empty or null.")
+                            else:
+                                st.write("AI answer field is missing from the response.")
+                        
+                        # Display search results count
+                        st.success(f"Found {len(results['results'])} matching startups")
+                        
+                        # Display each search result
+                        for i, result in enumerate(results["results"]):
+                            with st.container():
+                                st.markdown(f"""
+                                <div class="search-result">
+                                    <h3>{result.get('startup_name', 'Unknown Startup')}</h3>
+                                    <p><strong>Industry:</strong> {result.get('industry', 'Not specified')}</p>
+                                    <p><strong>Investment Status:</strong> {'Invested' if result.get('invested') == 'yes' else 'Not Invested'}</p>
+                                    <p><strong>Match Score:</strong> {result.get('score', 0):.2f}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                with st.expander("View Content"):
+                                    st.markdown(result.get('text', 'No content available'))
+                                
+                                # Add button to update investment status
+                                if st.button(f"{'✓ Mark as Invested' if result.get('invested') != 'yes' else '✗ Mark as Not Invested'}", key=f"invest_btn_{i}"):
+                                    new_status = "no" if result.get('invested') == 'yes' else "yes"
+                                    update_response = requests.post(
+                                        "http://localhost:8000/update-investment-status",
+                                        data={
+                                            "startup_name": result.get('startup_name'),
+                                            "status": new_status
+                                        }
+                                    )
+                                    if update_response.status_code == 200:
+                                        st.success(f"Updated investment status for {result.get('startup_name')}")
+                                        st.experimental_rerun()
+                                    else:
+                                        st.error(f"Failed to update investment status: {update_response.text}")
+                                else:
+                                    st.error(f"Error: {response.status_code} - {response.text}")
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
+                    st.write("Exception details:")
+                    st.exception(e)
 
 # INVEST PAGE
 elif st.session_state.page == 'invest':
     st.title("Update Investment Status")
     st.write("Update the investment status for startups in your portfolio.")
     
-    startup_name = st.text_input("Startup Name", placeholder="Enter the exact name of the startup...")
+    # Initialize startup list if not exists (reuse the same logic from search page)
+    if 'startup_list' not in st.session_state:
+        st.session_state.startup_list = []
+        try:
+            with st.status("Fetching startup list..."):
+                response = requests.get(
+                    "http://localhost:8000/search-startups",
+                    params={"query": "startup", "top_k": 100, "generate_ai_response": False}
+                )
+                
+                if response.status_code == 200:
+                    results = response.json().get("results", [])
+                    startup_names = set()
+                    for result in results:
+                        startup_name = result.get("startup_name")
+                        if startup_name:
+                            startup_names.add(startup_name)
+                    
+                    st.session_state.startup_list = sorted(list(startup_names))
+                else:
+                    st.warning("Could not fetch startup list from server.")
+                    st.session_state.startup_list = []
+        except Exception as e:
+            st.warning(f"Error fetching startup list: {str(e)}")
+            st.session_state.startup_list = []
+    
+    # If we have startup names, use a dropdown, otherwise use text input
+    if st.session_state.startup_list:
+        startup_name = st.selectbox("Startup Name", options=st.session_state.startup_list)
+    else:
+        startup_name = st.text_input("Startup Name", placeholder="Enter the exact name of the startup...")
+    
     status = st.radio("Investment Status", options=["Invested (Yes)", "Not Invested (No)"], index=0)
     
     # Map the radio selection to yes/no
@@ -302,6 +452,7 @@ elif st.session_state.page == 'invest':
                         st.error(f"Error: {response.status_code} - {response.text}")
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
+                    st.exception(e)
 
 # Footer
 st.markdown("---")
