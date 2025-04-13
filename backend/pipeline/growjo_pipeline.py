@@ -30,10 +30,9 @@ def growjo_s3_upload():
 
     # Format the datetime to YYYY-MM-DD_HH-MM-SS
     formatted_time = now.strftime("%Y%m%d_Data")
-    time_str = now.strftime("%Y%m%d-%H%M%S")
 
     # Combine the formatted time with "growjo_data" to create the filename
-    filename = f"{time_str}_growjo_data.csv"
+    filename = f"{pages}_growjo_data.csv"
     upload_file_to_s3(csv_content, filename, folder=f"growjo-data/{formatted_time}")
     print(filename)
 
