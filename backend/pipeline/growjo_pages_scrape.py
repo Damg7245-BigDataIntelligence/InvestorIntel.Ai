@@ -80,7 +80,7 @@ def scrape_growjo_data_by_page(start_page: int, end_page: int = None):
             current_page += 1
             if current_page % 10 == 0:
                 print(f"➡️ Navigated to page {current_page}")
-            time.sleep(0.25)
+            time.sleep(1)
         except Exception as e:
             print(f"❌ Couldn't navigate to start page {start_page}: {e}")
             driver.quit()
@@ -100,7 +100,8 @@ def scrape_growjo_data_by_page(start_page: int, end_page: int = None):
 
     all_rows = []
     headers = []
-    time.sleep(2)
+    time.sleep(90)
+    first_rows = []
 
     while current_page <= end_page:
         try:
@@ -110,6 +111,37 @@ def scrape_growjo_data_by_page(start_page: int, end_page: int = None):
 
             if not headers:
                 headers = [th.text.strip() for th in table.find('thead').find_all('th')]
+
+            first_row_text = table.find('tbody').find('tr').text.strip()
+
+            # Check if data is already seen
+            if first_row_text in first_rows:
+                print(f"⚠️ Already seen content on page {current_page}, waiting for fresh data...")
+                retries = 0
+                max_retries = 10
+                while first_row_text in first_rows and retries < max_retries:
+                    time.sleep(2)
+                    retries += 1
+                    soup = BeautifulSoup(driver.page_source, 'html.parser')
+                    table = soup.find('table', {'class': 'cstm-table'})
+                    first_row_text = table.find('tbody').find('tr').text.strip()
+                    print(f"⏳ Attempt {retries}/{max_retries} to get fresh data on page {current_page}...")
+
+                if retries == max_retries:
+                    print(f"🚨 Skipping page {current_page} after {max_retries} retries due to no new data.")
+                    current_page += 1
+                    if current_page <= end_page:
+                        try:
+                            next_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//li[@class='next']/a[@href]")))
+                            driver.execute_script("arguments[0].click();", next_button)
+                            time.sleep(2)
+                        except Exception as e:
+                            print(f"❌ Failed to click Next while skipping page: {e}")
+                            break
+                    continue
+
+            first_rows.append(first_row_text)
+            print(f"{current_page} | New unique pages seen: {len(first_rows)} | First row preview: {first_row_text}")
 
             for tr in table.find('tbody').find_all('tr'):
                 cells = tr.find_all('td')
@@ -144,7 +176,7 @@ def scrape_growjo_data_by_page(start_page: int, end_page: int = None):
             if current_page <= end_page:
                 next_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//li[@class='next']/a[@href]")))
                 driver.execute_script("arguments[0].click();", next_button)
-                time.sleep(1.5)
+                time.sleep(2)
 
         except Exception as e:
             print(f"❌ Error scraping page {current_page}: {e}")

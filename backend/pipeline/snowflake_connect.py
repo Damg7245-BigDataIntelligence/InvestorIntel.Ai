@@ -245,7 +245,6 @@ def create_combined_view(conn, cur):
                 o.homepage_url,
                 o.linkedin_url,
                 o.cb_url,
-                o.created_at,
                 o.updated_at
             FROM inestor_intel_db.growjo_schema.REFINED_GROWJO_DATA r
             JOIN crunchbase_basic_company_data.public.organization_summary o
