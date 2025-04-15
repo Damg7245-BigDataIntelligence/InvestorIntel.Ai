@@ -22,12 +22,12 @@ load_dotenv()
 
 class EmbeddingManager:
     """
-    Class to manage embeddings for pitch deck summaries, including chunking and 
-    storage in Pinecone vector database.
+    Class to manage embeddings for pitch deck summaries using the Monolithic Chunking
+    strategy where each summary is treated as a single, complete unit.
     """
     
     def __init__(self):
-        logger.info("Initializing EmbeddingManager")
+        logger.info("Initializing EmbeddingManager with Monolithic Chunking strategy")
         
         # Load environment variables
         self.PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -67,80 +67,16 @@ class EmbeddingManager:
         self.model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
         logger.info("Sentence Transformer model loaded successfully")
     
-    def create_chunks_from_summary(self, summary: str) -> List[Dict[str, str]]:
-        """
-        Divide the summary into two logical chunks with clear separation of content.
-        """
-        logger.info("Creating chunks from summary")
-        
-        # Define the sections for each chunk with clear separation
-        business_chunk_headers = [
-            "Problem", "Solution", "Product/Service", "Business Model", 
-            "Target Market", "Opportunity", "Traction", "Milestones", "Competition"
-        ]
-        
-        team_chunk_headers = [
-            "Team", "Financials", "Funding Ask", "Use of Funds", "Investment", "Investor Synopsis"
-        ]
-        
-        # Split the summary into lines
-        lines = summary.split('\n')
-        
-        # Initialize containers for each chunk's content
-        business_content = []
-        team_content = []
-        current_chunk = None
-        
-        for line in lines:
-            stripped_line = line.strip()
-            if not stripped_line:
-                continue
-                
-            # Check if this line starts a new section
-            is_section_header = any(header in stripped_line for header in business_chunk_headers + team_chunk_headers)
-            
-            if is_section_header:
-                # Determine which chunk this section belongs to
-                if any(header in stripped_line for header in business_chunk_headers):
-                    current_chunk = "business"
-                elif any(header in stripped_line for header in team_chunk_headers):
-                    current_chunk = "team"
-            
-            # Add content to appropriate chunk
-            if current_chunk == "business":
-                business_content.append(stripped_line)
-            elif current_chunk == "team":
-                team_content.append(stripped_line)
-        
-        # Create the final chunks
-        chunks = [
-            {
-                "type": "Business Overview & Market Opportunity",
-                "content": "\n".join(business_content) if business_content else "No business overview information found."
-            },
-            {
-                "type": "Team & Investment Details",
-                "content": "\n".join(team_content) if team_content else "No team or investment information found."
-            }
-        ]
-        
-        # Log chunk information
-        for i, chunk in enumerate(chunks):
-            logger.info(f"Chunk {i+1} ({chunk['type']}) length: {len(chunk['content'])} characters")
-            logger.debug(f"Chunk {i+1} content preview: {chunk['content'][:150]}...")
-        
-        return chunks
-    
     def store_summary_embeddings(self, 
-                               summary: str, 
-                               startup_name: str,
-                               industry: str,
-                               linkedin_urls: List[str],
-                               original_filename: str,
-                               s3_location: str) -> bool:
+                              summary: str, 
+                              startup_name: str,
+                              industry: str,
+                              linkedin_urls: List[str],
+                              original_filename: str,
+                              s3_location: str) -> bool:
         """
-        Process the pitch deck summary, generate embeddings for chunks, 
-        and store in Pinecone with appropriate metadata.
+        Process the pitch deck summary using the Monolithic Chunking strategy, 
+        generate embedding, and store in Pinecone with appropriate metadata.
         
         Args:
             summary: The generated pitch deck summary text
@@ -153,81 +89,72 @@ class EmbeddingManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        logger.info(f"Storing embeddings for {startup_name} pitch deck")
+        logger.info(f"Storing embedding for {startup_name} pitch deck using Monolithic Chunking")
         logger.info(f"Summary length: {len(summary)} characters")
         logger.info(f"Industry: {industry}, LinkedIn URLs: {linkedin_urls}")
         
         try:
-            # Create chunks from the summary
-            chunks = self.create_chunks_from_summary(summary)
-            
-            if not chunks:
-                logger.warning("No chunks created from summary. Skipping embedding.")
+            if not summary.strip():
+                logger.warning("Summary has empty content! Skipping embedding.")
                 return False
             
             # Current timestamp for the upload
             timestamp = datetime.datetime.now().isoformat()
             logger.info(f"Upload timestamp: {timestamp}")
             
-            # Generate embeddings for each chunk
-            for i, chunk in enumerate(chunks):
-                # Generate a unique ID for this record
-                unique_id = f"{startup_name.replace(' ', '_')}_{timestamp}_{i}"
-                logger.info(f"Creating embedding for chunk {i+1} with ID: {unique_id}")
-                
-                # Verify that chunk content is not empty
-                if not chunk["content"].strip():
-                    logger.warning(f"Chunk {i+1} ({chunk['type']}) has empty content! Using placeholder content.")
-                    chunk["content"] = f"No content available for {chunk['type']} section of {startup_name}."
-                
-                # Generate embedding for the chunk content
-                logger.info(f"Generating embedding for chunk {i+1} ({chunk['type']})")
-                embedding = self.model.encode(chunk["content"]).tolist()
-                logger.info(f"Generated embedding with {len(embedding)} dimensions")
-                
-                # Prepare metadata
-                metadata = {
-                    "startup_name": startup_name,
-                    "industry": industry,
-                    "linkedin_urls": "|".join(linkedin_urls) if linkedin_urls else "",  # Join with pipe for multiple URLs
-                    "chunk_type": chunk["type"],
-                    "original_filename": original_filename,
-                    "s3_location": s3_location,
-                    "upload_timestamp": timestamp,
-                    "invested": "no",  # Default to 'no' as specified
-                    "text": chunk["content"]  # Store the actual text for retrieval
-                }
-                
-                # Log metadata for debugging
-                logger.info(f"Metadata for chunk {i+1}: startup={startup_name}, industry={industry}, type={chunk['type']}")
-                
-                # Insert into Pinecone
-                logger.info(f"Inserting chunk {i+1} into Pinecone with ID: {unique_id}")
-                self.index.upsert([(unique_id, embedding, metadata)])
-                logger.info(f"Successfully inserted chunk {i+1}/{len(chunks)} into Pinecone")
+            # Generate a unique ID for this record - using _1 suffix to match original format
+            unique_id = f"{startup_name.replace(' ', '_')}_{timestamp}_1"
+            logger.info(f"Creating embedding with ID: {unique_id}")
             
-            logger.info(f"Successfully stored all embeddings for {startup_name} pitch deck")
+            # Generate embedding for the content
+            logger.info(f"Generating embedding")
+            embedding = self.model.encode(summary).tolist()
+            logger.info(f"Generated embedding with {len(embedding)} dimensions")
+            
+            # Prepare metadata - maintain the exact same format as before
+            metadata = {
+                "startup_name": startup_name,
+                "industry": industry,
+                "linkedin_urls": "|".join(linkedin_urls) if linkedin_urls else "",
+                "chunk_type": "Complete Pitch Deck Summary",  # Set to Complete Pitch Deck Summary for all startups
+                "original_filename": original_filename,
+                "s3_location": s3_location,
+                "upload_timestamp": timestamp,
+                "invested": "no",  # Default to 'no' as specified
+                "text": summary  # Store the complete summary
+            }
+            
+            # Log metadata for debugging
+            logger.info(f"Metadata: startup={startup_name}, industry={industry}, chunk_type={metadata['chunk_type']}")
+            
+            # Insert into Pinecone
+            logger.info(f"Inserting into Pinecone with ID: {unique_id}")
+            self.index.upsert([(unique_id, embedding, metadata)])
+            logger.info(f"Successfully inserted into Pinecone")
+            
             return True
         
         except Exception as e:
-            logger.error(f"Error storing embeddings: {e}", exc_info=True)
+            logger.error(f"Error storing embedding: {e}", exc_info=True)
             return False
     
-    def search_similar_startups(self, query: str, industry: str = None, invested: str = None, top_k: int = 5):
+    def search_similar_startups(self, query: str, industry: str = None, invested: str = None, 
+                           startup_name: str = None, top_k: int = 5):
         """
         Search for similar startups based on a query and optional filters.
         
         Args:
             query: The search query text
-            industry: Filter by industry (optional)
+            industry: Filter by industry category (optional)
             invested: Filter by investment status ('yes' or 'no', optional)
+            startup_name: Filter by startup name (optional)
             top_k: Number of results to return
             
         Returns:
             List of dictionary results with startup information
         """
         logger.info(f"Searching for startups with query: '{query}'")
-        logger.info(f"Filters - Industry: {industry}, Invested: {invested}, Top K: {top_k}")
+        logger.info(f"Filters - Industry: {industry}, Invested: {invested}, Startup: {startup_name}, Top K: {top_k}")
         
         try:
             # Generate embedding for the query
@@ -240,6 +167,8 @@ class EmbeddingManager:
                 filter_dict["industry"] = {"$eq": industry}
             if invested:
                 filter_dict["invested"] = {"$eq": invested}
+            if startup_name:
+                filter_dict["startup_name"] = {"$eq": startup_name}
             
             # Log the filter being used
             logger.info(f"Using filter: {filter_dict}")
@@ -262,20 +191,24 @@ class EmbeddingManager:
                 metadata = match["metadata"]
                 score = match["score"]
                 
-                # Create and add result entry
+                # Create and add result entry - maintain all original fields
                 result = {
+                    "id": match["id"],
                     "startup_name": metadata.get("startup_name"),
                     "industry": metadata.get("industry"),
                     "s3_location": metadata.get("s3_location"),
                     "chunk_type": metadata.get("chunk_type"),
                     "score": score,
                     "invested": metadata.get("invested"),
-                    "content": metadata.get("text", "No content available")
+                    "linkedin_urls": metadata.get("linkedin_urls", ""),
+                    "original_filename": metadata.get("original_filename", ""),
+                    "upload_timestamp": metadata.get("upload_timestamp", ""),
+                    "text": metadata.get("text", "No content available")
                 }
                 processed_results.append(result)
                 
                 # Log each match
-                logger.info(f"Match {i+1}: {result['startup_name']} ({result['chunk_type']}) - Score: {score:.4f}")
+                logger.info(f"Match {i+1}: {result['startup_name']} - Score: {score:.4f}")
             
             return processed_results
         
@@ -360,7 +293,7 @@ if __name__ == "__main__":
     )
     
     print("=" * 50)
-    print("Testing EmbeddingManager")
+    print("Testing EmbeddingManager (Monolithic Chunking Strategy)")
     print("=" * 50)
     
     try:
@@ -374,8 +307,8 @@ if __name__ == "__main__":
         print(f"Connected to Pinecone index: {manager.index_name}")
         print(f"Index Stats: {stats}")
         
-        # Test chunking with a sample summary
-        print("\n3. Testing chunking mechanism with sample summary")
+        # Test with a sample summary
+        print("\n3. Testing with sample summary")
         sample_summary = """
         **Problem:** Managing content marketing at scale is complex and inefficient.
         
@@ -400,13 +333,10 @@ if __name__ == "__main__":
         **Investor Synopsis:** Strong product-market fit in growing content marketing space with promising early traction. Experienced team addressing clear pain point with scalable SaaS model.
         """
         
-        chunks = manager.create_chunks_from_summary(sample_summary)
-        print(f"Created {len(chunks)} chunks")
-        for i, chunk in enumerate(chunks):
-            print(f"\nChunk {i+1}: {chunk['type']}")
-            print("-" * 40)
-            print(f"Content length: {len(chunk['content'])} characters")
-            print(f"Content preview: {chunk['content'][:150]}...")
+        print(f"\nProcessed summary into a single chunk")
+        print("-" * 40)
+        print(f"Content length: {len(sample_summary)} characters")
+        print(f"Content preview: {sample_summary[:150]}...")
         
         print("\nTest completed successfully!")
         

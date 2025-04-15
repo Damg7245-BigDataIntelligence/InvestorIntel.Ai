@@ -6,10 +6,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Fetch the credentials and region from the environment variables
-aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
-aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-aws_region = os.getenv('AWS_REGION')
-bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
+aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID_J')
+aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY_J')
+aws_region = os.getenv('AWS_REGION_J')
+bucket_name = os.getenv('AWS_S3_BUCKET_NAME_J')
 
 # Initialize a session using AWS credentials
 s3_client = boto3.client(
