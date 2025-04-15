@@ -80,6 +80,8 @@ def scrape_growjo_data_by_page(start_page: int, end_page: int = None):
             current_page += 1
             if current_page % 10 == 0:
                 print(f"➡️ Navigated to page {current_page}")
+            if current_page % 100 == 0:
+                time.sleep(10)
             time.sleep(1)
         except Exception as e:
             print(f"❌ Couldn't navigate to start page {start_page}: {e}")
