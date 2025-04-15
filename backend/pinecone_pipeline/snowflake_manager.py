@@ -1,19 +1,7 @@
 import os
-import logging
 import uuid
 from snowflake.connector import connect
 from dotenv import load_dotenv
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('snowflake.log')
-    ]
-)
-logger = logging.getLogger("SnowflakeManager")
 
 # Load environment variables
 load_dotenv()
@@ -21,9 +9,7 @@ load_dotenv()
 class SnowflakeManager:
     """Class to manage Snowflake operations for startup summaries"""
     
-    def __init__(self):
-        logger.info("Initializing SnowflakeManager")
-        
+    def __init__(self):        
         # Get Snowflake credentials from environment
         self.account = os.getenv('SNOWFLAKE_ACCOUNT')
         self.user = os.getenv('SNOWFLAKE_USER')
@@ -34,7 +20,6 @@ class SnowflakeManager:
         
         # Validate credentials
         if not all([self.account, self.user, self.password, self.warehouse, self.database]):
-            logger.error("Missing required Snowflake credentials")
             raise ValueError("Missing required Snowflake credentials")
             
         # Initialize Snowflake objects
@@ -71,21 +56,19 @@ class SnowflakeManager:
             cur.execute("""
             CREATE TABLE IF NOT EXISTS PITCH_DECKS.STARTUP_SUMMARY (
                 STARTUP_ID VARCHAR(36) PRIMARY KEY,
-                STARTUP_NAME VARCHAR(255) NOT NULL,
+                STARTUP_NAME VARCHAR(255) NOT NULL UNIQUE,
                 INDUSTRY VARCHAR(255),
                 SHORT_DESCRIPTION TEXT,
                 ANALYSIS_REPORT TEXT,
-                CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-                UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+                WEBSITE_URL VARCHAR(1000),
                 S3_LOCATION VARCHAR(1000),
-                ORIGINAL_FILENAME VARCHAR(255)
+                ORIGINAL_FILENAME VARCHAR(255),
+                CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+                UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
             )
             """)
-            
-            logger.info("Successfully initialized Snowflake objects")
-            
+                        
         except Exception as e:
-            logger.error(f"Error initializing Snowflake objects: {e}")
             raise
         finally:
             cur.close()
@@ -95,6 +78,8 @@ class SnowflakeManager:
                             startup_name: str,
                             summary: str,
                             industry: str = None,
+                            analysis_report: str = None,
+                            website_url: str = None,
                             s3_location: str = None,
                             original_filename: str = None) -> str:
         """
@@ -124,26 +109,27 @@ class SnowflakeManager:
                 STARTUP_NAME,
                 INDUSTRY,
                 SHORT_DESCRIPTION,
+                ANALYSIS_REPORT,
+                WEBSITE_URL,
                 S3_LOCATION,
                 ORIGINAL_FILENAME
-            ) VALUES (%s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 startup_id,
                 startup_name,
                 industry or "Unknown",
                 summary,
+                analysis_report,
+                website_url,
                 s3_location,
                 original_filename
             ))
             
             conn.commit()
-            logger.info(f"Successfully stored summary for startup: {startup_name}")
-            
             return startup_id
             
         except Exception as e:
-            logger.error(f"Error storing startup summary: {e}")
-            raise
+            raise e
         finally:
             cur.close()
             conn.close() 

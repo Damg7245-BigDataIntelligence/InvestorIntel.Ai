@@ -36,66 +36,6 @@ def validate_environment():
     missing_vars = [name for name, value in required_vars.items() if value is None]
     return len(missing_vars) == 0, missing_vars
 
-def upload_to_s3(file_path, bucket_name, aws_access_key_id, aws_secret_access_key, region=None, 
-                 startup_name=None, industry=None, original_filename=None):
-    """
-    Uploads a file to an AWS S3 bucket with improved naming convention.
-    """
-    if not os.path.exists(file_path):
-        print(f"Error: File not found at {file_path}")
-        return None
-
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key,
-        region_name=region
-    )
-    
-    # Generate a timestamp
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Determine the base filename
-    if original_filename:
-        # Use the original filename without path or extension
-        base_filename = os.path.splitext(os.path.basename(original_filename))[0]
-    else:
-        # Fallback to a default name
-        base_filename = "pitch_deck"
-    
-    # Clean up the filename - replace spaces and special chars with underscores
-    base_filename = ''.join(c if c.isalnum() else '_' for c in base_filename)
-    
-    # Create the S3 object name
-    # Format: [Filename]_[Timestamp].pdf
-    s3_object_name = f"{base_filename}_{timestamp}.pdf"
-    
-    # Add startup name and industry prefixes if they're valid values
-    prefix = ""
-    if startup_name and startup_name.lower() != "unknown":
-        safe_name = ''.join(c if c.isalnum() else '_' for c in startup_name)
-        prefix += f"{safe_name}_"
-    
-    if industry and industry.lower() != "unknown":
-        safe_industry = ''.join(c if c.isalnum() else '_' for c in industry)
-        prefix += f"{safe_industry}_"
-    
-    # Combine prefix with the base filename and timestamp
-    if prefix:
-        s3_object_name = f"{prefix}{s3_object_name}"
-
-    try:
-        print(f"Uploading '{file_path}' to S3 bucket '{bucket_name}' as '{s3_object_name}'...")
-        s3_client.upload_file(file_path, bucket_name, s3_object_name)
-        s3_uri = f"s3://{bucket_name}/{s3_object_name}"
-        print(f"Successfully uploaded to {s3_uri}")
-        return s3_uri
-    except boto3.exceptions.S3UploadFailedError as e:
-        print(f"Error uploading to S3: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred during S3 upload: {e}")
-    return None
-
 def summarize_pitch_deck_with_gemini(file_path, api_key, model_name):
     """
     Uploads a PDF to the Gemini API and generates a summary tailored for investors.

@@ -8,6 +8,17 @@ selenium
 bs4
 webdriver_manager
 
+#mistral ocr
+mistralai>=0.0.11
+google-generativeai
+pinecone[grpc]
+langchain
+
+nltk
+sentence_transformers
+
+playwright
+
 pyarrow<19.0.0
 snowflake-connector-python
 

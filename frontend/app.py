@@ -7,6 +7,8 @@ import json
 import traceback
 from PIL import Image
 
+FAST_API_URL = "http://localhost:8000"
+
 # Set page configuration
 st.set_page_config(
     page_title="InvestorIntel",
@@ -96,7 +98,7 @@ with st.sidebar:
         st.subheader("Select Industry")
         industry = st.selectbox(
             "Industry",
-            options=["Travel", "Food", "Marketing", "Health/Wellness", "Transportation"]
+            options=["AI", "Healthcare", "Tech", "Automotive", "Defense", "Entertainment", "RenewableEnergy"]
         )
         
         # Startup name
@@ -112,6 +114,10 @@ with st.sidebar:
             url = st.text_input(f"LinkedIn URL {i+1}", key=f"url_{i}")
             if url:
                 linkedin_urls.append(url)
+
+        # Website URL (new addition)
+        st.subheader("Company Website")
+        website_url = st.text_input("Website URL", placeholder="https://company-website.com")
 
 # UPLOAD PAGE
 if st.session_state.page == 'upload':
@@ -137,7 +143,8 @@ if st.session_state.page == 'upload':
                     form_data = {
                         "startup_name": startup_name if startup_name else "Unknown",
                         "industry": industry,
-                        "linkedin_urls": json.dumps(linkedin_urls)
+                        "linkedin_urls": json.dumps(linkedin_urls),
+                        "website_url": website_url
                     }
                     
                     # Print debug info
@@ -146,7 +153,7 @@ if st.session_state.page == 'upload':
                     
                     # Send to FastAPI backend
                     response = requests.post(
-                        "http://localhost:8000/process-pitch-deck",
+                        f"{FAST_API_URL}/process-pitch-deck",
                         files=files,
                         data=form_data
                     )
@@ -206,7 +213,7 @@ elif st.session_state.page == 'search':
             with st.status("Fetching startup list..."):
                 # Use a simple query that would match most documents
                 response = requests.get(
-                    "http://localhost:8000/search-startups",
+                    f"{FAST_API_URL}/search-startups",
                     params={"query": "startup", "top_k": 100, "generate_ai_response": False}  # Get up to 100 results
                 )
                 
@@ -288,19 +295,19 @@ elif st.session_state.page == 'search':
                     
                     # Display request info for debugging
                     with st.status("Sending search request to API..."):
-                        st.write(f"Endpoint: http://localhost:8000/search-startups")
+                        st.write(f"Endpoint: {FAST_API_URL}/search-startups")
                         st.write(f"Parameters: {params}")
                         
                         # Send to FastAPI backend
                         response = requests.get(
-                            "http://localhost:8000/search-startups",
+                            f"{FAST_API_URL}/search-startups",
                             params=params
                         )
                         
                         # Store the response for debugging
                         st.session_state.debug_info = {
                             "request": {
-                                "url": "http://localhost:8000/search-startups",
+                                "url": f"{FAST_API_URL}/search-startups",
                                 "params": params
                             },
                             "response": {
@@ -370,7 +377,7 @@ elif st.session_state.page == 'search':
                                 if st.button(f"{'✓ Mark as Invested' if result.get('invested') != 'yes' else '✗ Mark as Not Invested'}", key=f"invest_btn_{i}"):
                                     new_status = "no" if result.get('invested') == 'yes' else "yes"
                                     update_response = requests.post(
-                                        "http://localhost:8000/update-investment-status",
+                                        f"{FAST_API_URL}/update-investment-status",
                                         data={
                                             "startup_name": result.get('startup_name'),
                                             "status": new_status
@@ -399,7 +406,7 @@ elif st.session_state.page == 'invest':
         try:
             with st.status("Fetching startup list..."):
                 response = requests.get(
-                    "http://localhost:8000/search-startups",
+                    f"{FAST_API_URL}/search-startups",
                     params={"query": "startup", "top_k": 100, "generate_ai_response": False}
                 )
                 
@@ -438,7 +445,7 @@ elif st.session_state.page == 'invest':
                 try:
                     # Send to FastAPI backend
                     response = requests.post(
-                        "http://localhost:8000/update-investment-status",
+                        f"{FAST_API_URL}/update-investment-status",
                         data={
                             "startup_name": startup_name,
                             "status": status_value

@@ -1,12 +1,9 @@
 """Module for extracting text from PDF documents using Mistral OCR"""
 import os
-import logging
 from mistralai import Mistral
 from s3_utils import upload_pdf_to_s3, upload_markdown_to_s3
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def extract_text_with_mistral(presigned_url: str, industry: str, filename: str) -> str:
     """
@@ -30,7 +27,7 @@ def extract_text_with_mistral(presigned_url: str, industry: str, filename: str) 
         client = Mistral(api_key=api_key)
             
         # Process with Mistral OCR using the presigned URL
-        logger.info(f"Processing PDF with Mistral OCR: {filename}")
+        print(f"Processing PDF with Mistral OCR: {filename}")
         ocr_response = client.ocr.process(
             model="mistral-ocr-latest",
             document={
@@ -52,12 +49,12 @@ def extract_text_with_mistral(presigned_url: str, industry: str, filename: str) 
         md_filename = f"{filename}.md"
         s3_key = upload_markdown_to_s3(raw_text, industry, md_filename)
         
-        logger.info(f"Successfully extracted {len(raw_text)} characters with Mistral OCR")
+        print(f"Successfully extracted {len(raw_text)} characters with Mistral OCR")
         
         return raw_text
             
     except Exception as e:
-        logger.error(f"Error processing with Mistral OCR: {str(e)}")
+        print(f"Error processing with Mistral OCR: {str(e)}")
         raise Exception(f"Failed to process PDF with Mistral OCR: {str(e)}")
 
 def process_uploaded_pdf_with_mistral(file_content: bytes, filename: str = "uploaded_file.pdf") -> str:
@@ -85,12 +82,12 @@ def process_uploaded_pdf_with_mistral(file_content: bytes, filename: str = "uplo
         document_id = str(uuid.uuid4())
         
         # Upload PDF to S3
-        logger.info(f"Uploading PDF to S3: {filename}")
+        print(f"Uploading PDF to S3: {filename}")
         pdf_url = upload_pdf_to_s3(file_content, filename, document_id)
-        logger.info(f"PDF uploaded to S3: {pdf_url}")
+        print(f"PDF uploaded to S3: {pdf_url}")
         
         # Process with Mistral OCR using the S3 URL
-        logger.info(f"Processing PDF with Mistral OCR...")
+        print(f"Processing PDF with Mistral OCR...")
         ocr_response = client.ocr.process(
             model="mistral-ocr-latest",
             document={
@@ -116,10 +113,10 @@ def process_uploaded_pdf_with_mistral(file_content: bytes, filename: str = "uplo
         # Upload markdown content to S3
         upload_markdown_to_s3(markdown_content, year, md_filename)
         
-        logger.info(f"Successfully extracted {len(raw_text)} characters with Mistral OCR")
+        print(f"Successfully extracted {len(raw_text)} characters with Mistral OCR")
         
         return raw_text
             
     except Exception as e:
-        logger.error(f"Error processing with Mistral OCR: {str(e)}")
+        print(f"Error processing with Mistral OCR: {str(e)}")
         raise Exception(f"Failed to process PDF with Mistral OCR: {str(e)}")

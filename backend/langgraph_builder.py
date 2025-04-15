@@ -1,27 +1,31 @@
-# langgraph_builder.py
-
 from langgraph.graph import StateGraph, END
-from mcp_client import (
-    get_startup_summary,
-    get_industry_report,
-    get_top_companies,
-    store_analysis_report
-)
 from dotenv import load_dotenv
 import os
 import google.generativeai as genai
-
+from state import AnalysisState
+import tempfile
+import shutil
+from pinecone_pipeline.summary import summarize_pitch_deck_with_gemini
+from pinecone_pipeline.embedding_manager import EmbeddingManager
+from s3_utils import upload_pitch_deck_to_s3
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
-    
+
+# Initialize embedding manager
+embedding_manager = None
+try:
+    embedding_manager = EmbeddingManager()
+except Exception as e:
+    print(f"Warning: Failed to initialize embedding manager. Pinecone functionality will be disabled: {e}")
+
 # -------------------------
 # Gemini Prompt Generator
 # -------------------------
 def generate_gemini_prompt(startup, industry_report, competitors):
     competitor_section = "\n".join([
-        f"{c['Company']}: {c['Short_Description']} | Revenue: ${c['Revenue_Usd']}, Growth: {c['Emp_Growth_Percent']}%"
+        f"{c['COMPANY']}: {c['SHORT_DESCRIPTION']} | Revenue: ${c['REVENUE_USD']}, Growth: {c['EMP_GROWTH_PERCENT']}%"
         for c in competitors
     ])
 
@@ -31,14 +35,15 @@ You are a venture capital analyst.
 Analyze the following startup and generate a 5–6 page report covering:
 1. The problem the startup is solving
 2. Whether it is a real, pressing market issue based on Deloitte report
-3. Validation of the claimed market size (compare to Deloitte report if mentioned, else use your own judgement based on the TAM SAM SOM of that industry)
-4. Competitor landscape with revenue & employee growth context
-5. A recommendation on investment potential with a risk score (1–10)
+3. Also consider input of competitors short description and revenue growth and employee growth to make a better judgement and also include that in report. Understand properly what competitors are doing based on short description and revenue growth and employee growth.
+4. Validation of the claimed market size (compare to Deloitte report if mentioned, else use your own judgement based on the TAM SAM SOM of that industry)
+5. Competitor landscape with revenue & employee growth context
+6. A recommendation on investment potential with a risk score (1–10)
 
 Startup:
-Name: {startup['startup_name']}
-Industry: {startup['industry']}
-Summary: {startup['short_description']}
+Name: {startup['STARTUP_NAME']}
+Industry: {startup['INDUSTRY']}
+Summary: {startup['SHORT_DESCRIPTION']}
 
 Industry Trend Report (Deloitte):
 {industry_report}
@@ -51,26 +56,221 @@ Also include a final section: "Market Size Validation & Commentary".
 """
 
 # -------------------------
+# Hardcoded Snowflake Logic (MCP-less)
+# -------------------------
+import snowflake.connector
+
+SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER")
+SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
+SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
+SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
+
+def snowflake_query(query, params=None):
+    conn = snowflake.connector.connect(
+        user=SNOWFLAKE_USER,
+        password=SNOWFLAKE_PASSWORD,
+        account=SNOWFLAKE_ACCOUNT,
+        warehouse=SNOWFLAKE_WAREHOUSE,
+    )
+    cursor = conn.cursor()
+    cursor.execute(query, params or {})
+    result = cursor.fetchall()
+    columns = [col[0] for col in cursor.description]
+    return [dict(zip(columns, row)) for row in result]
+
+def get_startup_summary(startup_name: str):
+    query = """
+    SELECT startup_name, industry, short_description 
+    FROM INDUSTRY_REPORTS.PITCH_DECKS.STARTUP_SUMMARY
+    WHERE startup_name = %s
+    LIMIT 1
+    """
+    result = snowflake_query(query, (startup_name,))
+    return result[0] if result else {"error": "Startup not found."}
+
+def get_industry_report(industry_name: str):
+    query = """
+    SELECT Report_Summary 
+    FROM INDUSTRY_REPORTS.MARKET_RESEARCH.INDUSTRY_REPORTS 
+    WHERE Industry_Name = %s
+    LIMIT 1
+    """
+    result = snowflake_query(query, (industry_name,))
+    return result[0]["REPORT_SUMMARY"] if result else "No report found."
+
+def get_top_companies(industry_name: str):
+    query = """
+    SELECT Company, Industry, Emp_Growth_Percent, Revenue_Usd, Short_Description 
+    FROM INESTOR_INTEL_DB.GROWJO_SCHEMA.COMPANY_MERGED_VIEW
+    WHERE Industry = %s
+    ORDER BY Revenue_Usd DESC, Emp_Growth_Percent DESC
+    LIMIT 10
+    """
+    return snowflake_query(query, (industry_name,))
+
+def store_analysis_report(startup_name: str, report_text: str):
+    query = """
+    UPDATE INDUSTRY_REPORTS.PITCH_DECKS.STARTUP_SUMMARY
+    SET analysis_report = %s
+    WHERE startup_name = %s
+    """
+    conn = snowflake.connector.connect(
+        user=SNOWFLAKE_USER,
+        password=SNOWFLAKE_PASSWORD,
+        account=SNOWFLAKE_ACCOUNT,
+        warehouse=SNOWFLAKE_WAREHOUSE,
+    )
+    cursor = conn.cursor()
+    cursor.execute(query, (report_text, startup_name))
+    conn.commit()
+    return {"status": "success", "message": f"Report stored for {startup_name}"}
+
+# -------------------------
+# PDF Processing Node
+# -------------------------
+def process_pitch_deck(state):
+    """Process a pitch deck PDF and generate a summary"""
+    print("Processing pitch deck")
+    # Debug printing to help diagnose the issue
+    print(f"State keys: {list(state.keys())}")
+    print(f"PDF file path in state: {state.get('pdf_file_path')}")
+    
+    if not state.get("pdf_file_path"):
+        print("No PDF file path provided")
+        state["error"] = "No PDF file path provided"
+        return state
+    
+    # Check if the file exists
+    file_path = state["pdf_file_path"]
+    if not os.path.exists(file_path):
+        print(f"File doesn't exist at path: {file_path}")
+        state["error"] = f"File doesn't exist at path: {file_path}"
+        return state
+        
+    try:
+        print(f"Processing file: {file_path}")
+        # Extract variables from state
+        startup_name = state.get("startup_name", "Unknown")
+        industry = state.get("industry", "Unknown")
+        linkedin_urls = state.get("linkedin_urls", [])
+        website_url = state.get("website_url", "")
+        original_filename = state.get("original_filename", os.path.basename(file_path))
+        
+        print(f"Uploading file to S3 for {startup_name} in {industry}")
+        # Upload file to S3
+        s3_location = upload_pitch_deck_to_s3(
+            file_path=file_path,
+            startup_name=startup_name,
+            industry=industry,
+            original_filename=original_filename
+        )
+        
+        print(f"S3 Upload result: {s3_location}")
+        if not s3_location:
+            state["error"] = "Failed to upload file to S3"
+            return state
+            
+        state["s3_location"] = s3_location
+        
+        print(f"Generating summary using Gemini for {file_path}")
+        # Generate summary using Gemini
+        investor_summary = summarize_pitch_deck_with_gemini(
+            file_path=file_path,
+            api_key=GEMINI_API_KEY,
+            model_name="gemini-2.0-flash"
+        )
+        
+        print(f"Summary generation complete: {investor_summary is not None}")
+        if not investor_summary:
+            state["error"] = "Failed to generate summary"
+            return state
+            
+        state["summary_text"] = investor_summary
+        
+        # Store embedding in Pinecone if available
+        if embedding_manager:
+            print(f"Storing embeddings for {startup_name}")
+            embedding_success = embedding_manager.store_summary_embeddings(
+                summary=investor_summary,
+                startup_name=startup_name,
+                industry=industry,
+                website_url=website_url,
+                linkedin_urls=linkedin_urls,
+                original_filename=original_filename,
+                s3_location=s3_location
+            )
+            state["embedding_status"] = "success" if embedding_success else "failed"
+            print(f"Embedding status: {state['embedding_status']}")
+        else:
+            state["embedding_status"] = "skipped"
+            print("Embedding manager not available, skipping embedding storage")
+            
+        # Update the summary state for subsequent nodes
+        # Create the summary object in the format expected by other nodes
+        state["summary"] = {
+            "STARTUP_NAME": startup_name,
+            "INDUSTRY": industry,
+            "SHORT_DESCRIPTION": investor_summary
+        }
+        
+        print(f"Process pitch deck completed successfully for {startup_name}")
+        return state
+        
+    except Exception as e:
+        import traceback
+        print(f"Error processing pitch deck: {str(e)}")
+        print(traceback.format_exc())
+        state["error"] = f"Error processing pitch deck: {str(e)}"
+        return state
+
+# -------------------------
 # Graph Nodes
 # -------------------------
 def fetch_summary(state):
+    # If we already have a summary from PDF processing, skip fetching
+    if state.get("summary") and isinstance(state["summary"], dict):
+        return state
+        
     summary_data = get_startup_summary(state["startup_name"])
     state["summary"] = summary_data
     return state
 
 def fetch_industry_report(state):
-    industry = state["summary"]["industry"]
+    if not state.get("summary") or not isinstance(state["summary"], dict):
+        state["industry_report"] = "No industry report available - summary data missing"
+        return state
+    
+    industry = state["summary"].get("INDUSTRY")
+    if not industry:
+        state["industry_report"] = "No industry report available - industry not specified"
+        return state
+        
     report = get_industry_report(industry)
     state["industry_report"] = report
     return state
 
 def fetch_competitors(state):
-    industry = state["summary"]["industry"]
+    if not state.get("summary") or not isinstance(state["summary"], dict):
+        state["competitors"] = []
+        return state
+    
+    industry = state["summary"].get("INDUSTRY")
+    if not industry:
+        state["competitors"] = []
+        return state
+        
     competitors = get_top_companies(industry)
+    print("="*100)
+    print("competitors from fetch_competitors", competitors)
+    print("="*100)
     state["competitors"] = competitors
     return state
 
 def generate_report(state):
+    # Check if we have the necessary data
+    if not state.get("summary") or not state.get("industry_report") or not state.get("competitors"):
+        state["final_report"] = "Unable to generate report: Missing required data"
+        return state
     model = genai.GenerativeModel("gemini-2.0-flash")
     prompt = generate_gemini_prompt(
         startup=state["summary"],
@@ -83,22 +283,34 @@ def generate_report(state):
     return state
 
 def store_report(state):
+    if not state.get("startup_name") or not state.get("final_report"):
+        return state
+        
     store_analysis_report(state["startup_name"], state["final_report"])
     return state
 
 # -------------------------
 # Graph Compiler
 # -------------------------
-def build_analysis_graph():
-    builder = StateGraph()
 
+def build_analysis_graph():
+    builder = StateGraph(AnalysisState)
+    print("Building analysis graph")
+    # Add nodes
+    builder.add_node("process_pitch_deck", process_pitch_deck)
     builder.add_node("fetch_summary", fetch_summary)
     builder.add_node("fetch_industry_report", fetch_industry_report)
     builder.add_node("fetch_competitors", fetch_competitors)
     builder.add_node("generate_report", generate_report)
     builder.add_node("store_report", store_report)
 
-    builder.set_entry_point("fetch_summary")
+    # Set conditional starting point
+    builder.set_conditional_entry_point(
+        lambda state: "process_pitch_deck" if state.get("pdf_file_path") else "fetch_summary"
+    )
+    
+    # Add edges
+    builder.add_edge("process_pitch_deck", "fetch_summary")
     builder.add_edge("fetch_summary", "fetch_industry_report")
     builder.add_edge("fetch_industry_report", "fetch_competitors")
     builder.add_edge("fetch_competitors", "generate_report")

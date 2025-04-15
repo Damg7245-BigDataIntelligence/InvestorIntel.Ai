@@ -1,0 +1,20 @@
+streamlit
+fastapi
+uvicorn
+python-multipart
+boto3
+google-generativeai
+pillow
+python-dotenv
+email-validator
+
+# Embedding and Vector Database Dependencies
+sentence-transformers
+pinecone[grpc]
+
+# Additional dependencies that might be required
+modelcontextprotocol
+langchain
+langgraph
+snowflake-connector-python
+requests
