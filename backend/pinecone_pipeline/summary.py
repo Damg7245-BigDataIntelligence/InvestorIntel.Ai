@@ -2,7 +2,6 @@ import boto3
 import google.generativeai as genai
 import os
 import time
-import sys
 import datetime
 from pathlib import Path
 from dotenv import load_dotenv
