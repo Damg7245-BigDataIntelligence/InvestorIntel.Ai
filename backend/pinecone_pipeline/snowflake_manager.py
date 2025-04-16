@@ -42,11 +42,7 @@ class SnowflakeManager:
         cur = conn.cursor()
         
         try:
-            # Create database if not exists
-            cur.execute(f"""
-            CREATE DATABASE IF NOT EXISTS {self.database}
-            """)
-            
+            cur.execute("USE DATABASE INVESTOR_INTEL_DB")
             # Create schema if not exists
             cur.execute("""
             CREATE SCHEMA IF NOT EXISTS PITCH_DECKS
@@ -104,7 +100,7 @@ class SnowflakeManager:
             
             # Insert the summary into Snowflake
             cur.execute("""
-            INSERT INTO PITCH_DECKS.STARTUP_SUMMARY (
+            INSERT INTO INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY (
                 STARTUP_ID,
                 STARTUP_NAME,
                 INDUSTRY,

@@ -110,11 +110,6 @@ class EmbeddingManager:
             }
         ]
         
-        # Log chunk information
-        for i, chunk in enumerate(chunks):
-            print(f"Chunk {i+1} ({chunk['type']}) length: {len(chunk['content'])} characters")
-            print(f"Chunk {i+1} content preview: {chunk['content'][:150]}...")
-        
         return chunks
     
     def store_summary_embeddings(self, 

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from langgraph_builder import build_analysis_graph
 from pinecone_pipeline.embedding_manager import EmbeddingManager
+from startup_check import startup_exists_check, StartupCheckRequest
 import os
 import tempfile
 import shutil
@@ -50,6 +51,11 @@ async def health_check():
         "status": "ok",
         "message": "API is running and all required services are operational"
     }
+
+@app.post("/check-startup-exists")
+async def check_startup_exists(request: StartupCheckRequest):
+    """Check if a startup already exists in the database"""
+    return startup_exists_check(request.startup_name)
 
 @app.post("/analyze")
 def analyze_startup(request: AnalyzeRequest):

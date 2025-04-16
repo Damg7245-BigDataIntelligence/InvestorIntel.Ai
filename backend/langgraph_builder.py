@@ -81,7 +81,7 @@ def snowflake_query(query, params=None):
 def get_startup_summary(startup_name: str):
     query = """
     SELECT startup_name, industry, short_description 
-    FROM INDUSTRY_REPORTS.PITCH_DECKS.STARTUP_SUMMARY
+    FROM INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY
     WHERE startup_name = %s
     LIMIT 1
     """
@@ -91,7 +91,7 @@ def get_startup_summary(startup_name: str):
 def get_industry_report(industry_name: str):
     query = """
     SELECT Report_Summary 
-    FROM INDUSTRY_REPORTS.MARKET_RESEARCH.INDUSTRY_REPORTS 
+    FROM INVESTOR_INTEL_DB.MARKET_RESEARCH.INDUSTRY_REPORTS 
     WHERE Industry_Name = %s
     LIMIT 1
     """
@@ -101,16 +101,17 @@ def get_industry_report(industry_name: str):
 def get_top_companies(industry_name: str):
     query = """
     SELECT Company, Industry, Emp_Growth_Percent, Revenue_Usd, Short_Description 
-    FROM INESTOR_INTEL_DB.GROWJO_SCHEMA.COMPANY_MERGED_VIEW
+    FROM INVESTOR_INTEL_DB.GROWJO_SCHEMA.COMPANY_MERGED_VIEW
     WHERE Industry = %s
     ORDER BY Revenue_Usd DESC, Emp_Growth_Percent DESC
     LIMIT 10
     """
-    return snowflake_query(query, (industry_name,))
+    result = snowflake_query(query, (industry_name,))
+    return result
 
 def store_analysis_report(startup_name: str, report_text: str):
     query = """
-    UPDATE INDUSTRY_REPORTS.PITCH_DECKS.STARTUP_SUMMARY
+    UPDATE INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY
     SET analysis_report = %s
     WHERE startup_name = %s
     """
@@ -119,6 +120,7 @@ def store_analysis_report(startup_name: str, report_text: str):
         password=SNOWFLAKE_PASSWORD,
         account=SNOWFLAKE_ACCOUNT,
         warehouse=SNOWFLAKE_WAREHOUSE,
+        database="INVESTOR_INTEL_DB"
     )
     cursor = conn.cursor()
     cursor.execute(query, (report_text, startup_name))
@@ -130,7 +132,7 @@ def store_analysis_report(startup_name: str, report_text: str):
 # -------------------------
 def process_pitch_deck(state):
     """Process a pitch deck PDF and generate a summary"""
-    print("Processing pitch deck")
+    print("Processing pitch deck state:", state)
     # Debug printing to help diagnose the issue
     print(f"State keys: {list(state.keys())}")
     print(f"PDF file path in state: {state.get('pdf_file_path')}")
@@ -185,11 +187,10 @@ def process_pitch_deck(state):
             state["error"] = "Failed to generate summary"
             return state
             
-        state["summary_text"] = investor_summary
+        # state["summary_text"] = investor_summary
         
         # Store embedding in Pinecone if available
         if embedding_manager:
-            print(f"Storing embeddings for {startup_name}")
             embedding_success = embedding_manager.store_summary_embeddings(
                 summary=investor_summary,
                 startup_name=startup_name,
@@ -200,10 +201,8 @@ def process_pitch_deck(state):
                 s3_location=s3_location
             )
             state["embedding_status"] = "success" if embedding_success else "failed"
-            print(f"Embedding status: {state['embedding_status']}")
         else:
             state["embedding_status"] = "skipped"
-            print("Embedding manager not available, skipping embedding storage")
             
         # Update the summary state for subsequent nodes
         # Create the summary object in the format expected by other nodes
@@ -213,7 +212,6 @@ def process_pitch_deck(state):
             "SHORT_DESCRIPTION": investor_summary
         }
         
-        print(f"Process pitch deck completed successfully for {startup_name}")
         return state
         
     except Exception as e:
@@ -260,9 +258,6 @@ def fetch_competitors(state):
         return state
         
     competitors = get_top_companies(industry)
-    print("="*100)
-    print("competitors from fetch_competitors", competitors)
-    print("="*100)
     state["competitors"] = competitors
     return state
 

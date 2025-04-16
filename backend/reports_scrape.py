@@ -1,11 +1,9 @@
 import os
-import time
 import requests
 import tempfile
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 import google.generativeai as genai
-from mistral_ocr_extractor import extract_text_with_mistral
 from chunking_strategies import markdown_header_chunks
 from vector_storage_service import generate_embeddings, store_in_pinecone
 from s3_utils import upload_pdf_to_s3

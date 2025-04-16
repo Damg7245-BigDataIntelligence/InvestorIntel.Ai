@@ -98,7 +98,7 @@ with st.sidebar:
         st.subheader("Select Industry")
         industry = st.selectbox(
             "Industry",
-            options=["AI", "Healthcare", "Tech", "Automotive", "Defense", "Entertainment", "RenewableEnergy"]
+            options=["AI", "Healthcare", "Tech Services", "Automotive", "Defense", "Entertainment", "Renewable Ener..."]
         )
         
         # Startup name
@@ -134,62 +134,81 @@ if st.session_state.page == 'upload':
         
         # Process button
         if st.button("Process Pitch Deck"):
-            with st.spinner('Processing your pitch deck...'):
-                try:
-                    # Prepare data for API request
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-                    
-                    # Prepare form data
-                    form_data = {
-                        "startup_name": startup_name if startup_name else "Unknown",
-                        "industry": industry,
-                        "linkedin_urls": json.dumps(linkedin_urls),
-                        "website_url": website_url
-                    }
-                    
-                    # Print debug info
-                    st.info(f"Sending file: {uploaded_file.name}")
-                    st.info(f"Startup: {startup_name}, Industry: {industry}")
-                    
-                    # Send to FastAPI backend
-                    response = requests.post(
-                        f"{FAST_API_URL}/process-pitch-deck",
-                        files=files,
-                        data=form_data
+            # First check if the startup already exists before showing the processing spinner
+            startup_exists = False
+            
+            if startup_name and startup_name.lower() != "unknown":
+                with st.spinner('Checking if startup already exists...'):
+                    check_response = requests.post(
+                        f"{FAST_API_URL}/check-startup-exists", 
+                        json={"startup_name": startup_name}
                     )
                     
-                    if response.status_code == 200:
-                        result = response.json()
+                    if check_response.status_code == 200:
+                        check_result = check_response.json()
+                        startup_exists = check_result.get("exists", False)
+            
+            # After the spinner completes, check if we should show an error
+            if startup_exists:
+                st.warning("This startup already exists in our database.")
+            else:
+                # Only proceed to processing if the startup doesn't exist
+                with st.spinner('Processing your pitch deck...'):
+                    try:
+                        # Prepare data for API request
+                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
                         
-                        # Display the summary
-                        st.success("Pitch deck processed successfully!")
-                        st.subheader("Investor Summary")
-                        st.markdown(result["summary"])
+                        # Prepare form data
+                        form_data = {
+                            "startup_name": startup_name if startup_name else "Unknown",
+                            "industry": industry,
+                            "linkedin_urls": json.dumps(linkedin_urls),
+                            "website_url": website_url
+                        }
                         
-                        # Display S3 location info
-                        st.subheader("Storage Information")
-                        st.info(f"PDF stored at: {result['s3_location']}")
+                        # Print debug info
+                        st.info(f"Sending file: {uploaded_file.name}")
+                        st.info(f"Startup: {startup_name}, Industry: {industry}")
                         
-                        # Display the original filename if available
-                        if "original_filename" in result:
-                            st.info(f"Original filename: {result['original_filename']}")
+                        # Send to FastAPI backend
+                        response = requests.post(
+                            f"{FAST_API_URL}/process-pitch-deck",
+                            files=files,
+                            data=form_data
+                        )
                         
-                        # Display embedding status
-                        if "embedding_status" in result:
-                            embedding_status = result["embedding_status"]
-                            if embedding_status == "success":
-                                st.success("✅ Embedding successfully stored in Pinecone")
-                            elif embedding_status == "failed":
-                                st.warning("⚠️ Failed to store embedding in Pinecone")
-                            elif embedding_status == "skipped":
-                                st.info("ℹ️ Embedding storage skipped - Pinecone not configured")
-                            else:
-                                st.error(f"❌ Error storing embedding: {embedding_status}")
-                    else:
-                        st.error(f"Error: {response.status_code} - {response.text}")
-                except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
-                    st.exception(e)
+                        if response.status_code == 200:
+                            result = response.json()
+                            
+                            # Display the summary
+                            st.success("Pitch deck processed successfully!")
+                            st.subheader("Investor Summary")
+                            st.markdown(result["summary"])
+                            
+                            # Display S3 location info
+                            st.subheader("Storage Information")
+                            st.info(f"PDF stored at: {result['s3_location']}")
+                            
+                            # Display the original filename if available
+                            if "original_filename" in result:
+                                st.info(f"Original filename: {result['original_filename']}")
+                            
+                            # Display embedding status
+                            if "embedding_status" in result:
+                                embedding_status = result["embedding_status"]
+                                if embedding_status == "success":
+                                    st.success("✅ Embedding successfully stored in Pinecone")
+                                elif embedding_status == "failed":
+                                    st.warning("⚠️ Failed to store embedding in Pinecone")
+                                elif embedding_status == "skipped":
+                                    st.info("ℹ️ Embedding storage skipped - Pinecone not configured")
+                                else:
+                                    st.error(f"❌ Error storing embedding: {embedding_status}")
+                        else:
+                            st.error(f"Error: {response.status_code} - {response.text}")
+                    except Exception as e:
+                        st.error(f"An error occurred: {str(e)}")
+                        st.exception(e)
 
 # SEARCH PAGE
 elif st.session_state.page == 'search':
@@ -324,7 +343,7 @@ elif st.session_state.page == 'search':
                             if "debug_info" in st.session_state:
                                 st.session_state.debug_info["response"]["data"] = results
                             
-                            # Display raw JSON for debugging in the expander
+                            # Display raw JSON for debugging
                             st.write("API response received.")
                     
                     # Display raw JSON for debugging
