@@ -18,3 +18,4 @@ langchain
 langgraph
 snowflake-connector-python
 requests
+pandas

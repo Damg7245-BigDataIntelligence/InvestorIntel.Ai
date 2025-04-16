@@ -33,22 +33,22 @@ def entity_creation(conn, cur):
      # Create Warehouse (if it doesn't exist)
     def create_warehouse(cur):
         cur.execute("""
-            CREATE WAREHOUSE IF NOT EXISTS INESTOR_INTEL_WH
+            CREATE WAREHOUSE IF NOT EXISTS INVESTOR_INTEL_WH
             WAREHOUSE_SIZE = 'SMALL'
             AUTO_SUSPEND = 60
             AUTO_RESUME = TRUE;
         """)
-        cur.execute("USE WAREHOUSE INESTOR_INTEL_WH;")  # Specify the warehouse
+        cur.execute("USE WAREHOUSE INVESTOR_INTEL_WH;")  # Specify the warehouse
 
-    print("Created Warehouse- INESTOR_INTEL_WH")
+    print("Created Warehouse- INVESTOR_INTEL_WH")
 
     # Create Database (if it doesn't exist)
     def create_database(cur):
         cur.execute("""
-            CREATE DATABASE IF NOT EXISTS INESTOR_INTEL_DB;
+            CREATE DATABASE IF NOT EXISTS INVESTOR_INTEL_DB;
         """)
-        cur.execute("USE DATABASE INESTOR_INTEL_DB;")  # Specify the database
-        print("Created Database INESTOR_INTEL_DB")
+        cur.execute("USE DATABASE INVESTOR_INTEL_DB;")  # Specify the database
+        print("Created Database INVESTOR_INTEL_DB")
 
     # Create Schema (if it doesn't exist)
     def create_schema(cur):
@@ -57,7 +57,7 @@ def entity_creation(conn, cur):
         """)
         cur.execute("USE SCHEMA GROWJO_SCHEMA;")  # Specify the schema
 
-        print("Created Schema INESTOR_INTEL_DB.GROWJO_SCHEMA")
+        print("Created Schema INVESTOR_INTEL_DB.GROWJO_SCHEMA")
 
     create_warehouse(cur)
     create_database(cur)
@@ -228,7 +228,7 @@ def refine_data(conn, cur):
 def create_combined_view(conn, cur):
     # Create a view to select the top 10 companies by funding
     cur.execute("""
-        CREATE OR REPLACE VIEW inestor_intel_db.growjo_schema.COMPANY_MERGED_VIEW AS
+        CREATE OR REPLACE VIEW investor_intel_db.growjo_schema.COMPANY_MERGED_VIEW AS
             SELECT 
                 r.Company,
                 o.short_description,
@@ -242,7 +242,7 @@ def create_combined_view(conn, cur):
                 o.linkedin_url,
                 o.cb_url,
                 o.updated_at
-            FROM inestor_intel_db.growjo_schema.REFINED_GROWJO_DATA r
+            FROM investor_intel_db.growjo_schema.REFINED_GROWJO_DATA r
             JOIN crunchbase_basic_company_data.public.organization_summary o
                 ON LOWER(r.Company) = LOWER(o.name);
     """)

@@ -3,17 +3,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_context(conn, cur):
-    cur.execute("USE ROLE ACCOUNTADMIN;")  # Specify the role
-    cur.execute("USE WAREHOUSE INESTOR_INTEL_WH;")  # Specify the warehouse
-    cur.execute("USE DATABASE INESTOR_INTEL_DB;")  # Specify the database
-
-    conn.commit()  # Commit the changes
 # Function to create the InvestorIntel schema and tables
 def create_InvestorIntel_entities(conn, cur):
 
     # Step 0: Set the context
-    get_context(conn, cur)
     print("Context set to Investor Intel database and warehouse.")
 
     # Step 1: Create Schema
@@ -40,12 +33,16 @@ def create_InvestorIntel_entities(conn, cur):
         CREATE TABLE IF NOT EXISTS startup_information.startup (
             startup_id          NUMBER AUTOINCREMENT PRIMARY KEY,
             startup_name        STRING,
+            industry            STRING,
             founder_name        STRING,
             email_address       STRING,
             website_url         STRING,
             linkedin_url        STRING,
             valuation_ask       NUMBER(18, 2),
+            short_description   STRING,
+            analytics_report   STRING,
             pitch_deck_link     STRING,
+            pitch_deck_filename STRING,
             created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
@@ -74,7 +71,6 @@ def create_InvestorIntel_entities(conn, cur):
 
 def insert_investor(first_name, last_name, email_address, username):
     conn, cur = account_login()
-    get_context(conn, cur)
     try:
         insert_query = """
             INSERT INTO startup_information.investor (
@@ -92,9 +88,8 @@ def insert_investor(first_name, last_name, email_address, username):
         conn.rollback()
         print(f"❌ Failed to insert investor: {e}")
 
-def insert_startup(startup_name, founder_name, email_address, website_url, linkedin_url, valuation_ask, pitch_deck_link):
+def insert_startup(startup_name, founder_name, email_address, website_url, linkedin_url, valuation_ask, industry):
     conn, cur = account_login()
-    get_context(conn, cur)
     try:
         insert_query = """
             INSERT INTO startup_information.startup (
@@ -104,7 +99,7 @@ def insert_startup(startup_name, founder_name, email_address, website_url, linke
                 website_url,
                 linkedin_url,
                 valuation_ask,
-                pitch_deck_link
+                industry
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s);
         """
@@ -115,7 +110,7 @@ def insert_startup(startup_name, founder_name, email_address, website_url, linke
             website_url,
             linkedin_url,
             valuation_ask,
-            pitch_deck_link
+            industry
         ))
         conn.commit()
         print("✅ Startup inserted successfully.")
@@ -125,7 +120,6 @@ def insert_startup(startup_name, founder_name, email_address, website_url, linke
 
 def map_startup_to_investors(startup_name, investor_usernames):
     conn, cur = account_login()
-    get_context(conn, cur)
     try:
         # Step 1: Get startup_id
         cur.execute("""
@@ -169,17 +163,22 @@ def map_startup_to_investors(startup_name, investor_usernames):
 
 def get_all_investor_usernames():
     conn, cur = account_login()
-    get_context(conn, cur)
     try:
         cur.execute("""
-            SELECT username FROM startup_information.investor;
+            SELECT username, first_name, last_name FROM startup_information.investor;
         """)
         results = cur.fetchall()
-        usernames = [row[0] for row in results]
-        return usernames
+
+        # Format: "username (First Last)"
+        formatted_options = [f"{row[0]} ({row[1]} {row[2]})" for row in results]
+        username_mapping = {f"{row[0]} ({row[1]} {row[2]})": row[0] for row in results}
+
+        print("✅ Investor usernames fetched successfully.")
+        return formatted_options, username_mapping
     except Exception as e:
         print(f"❌ Failed to fetch investor usernames: {e}")
-        return []
+        return [], {}
+
     
 
 

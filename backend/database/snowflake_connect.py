@@ -25,4 +25,8 @@ def account_login():
     cur = conn.cursor()
     print("Connected to Snowflake",cur)
 
+    cur.execute("USE WAREHOUSE INVESTOR_INTEL_WH;")  # Specify the warehouse
+    cur.execute("USE DATABASE INVESTOR_INTEL_DB;")  # Specify the database
+    conn.commit()
+
     return conn, cur
