@@ -13,6 +13,7 @@ mistralai>=0.0.11
 google-generativeai
 pinecone[grpc]
 langchain
+langgraph
 
 nltk
 sentence_transformers

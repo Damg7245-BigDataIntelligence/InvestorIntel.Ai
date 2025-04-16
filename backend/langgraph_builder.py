@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 import os
 import google.generativeai as genai
 from state import AnalysisState
-import tempfile
-import shutil
 from pinecone_pipeline.summary import summarize_pitch_deck_with_gemini
 from pinecone_pipeline.embedding_manager import EmbeddingManager
 from s3_utils import upload_pitch_deck_to_s3
