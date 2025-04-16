@@ -25,3 +25,4 @@ snowflake-connector-python
 
 supabase
 bcrypt
+python-multipart
