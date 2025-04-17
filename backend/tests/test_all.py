@@ -129,7 +129,7 @@ def test_fetch_industry_report(mock_get_report):
 def test_fetch_competitors(mock_get_companies):
     # Setup
     mock_competitors = [
-        {"COMPANY": "CompA", "SHORT_DESCRIPTION": "Desc A", "REVENUE_USD": 1000, "EMP_GROWTH_PERCENT": 10}
+        {"COMPANY": "CompA", "SHORT_DESCRIPTION": "Desc A", "REVENUE": 1000, "EMP_GROWTH_PERCENT": 10}
     ]
     mock_get_companies.return_value = mock_competitors
     

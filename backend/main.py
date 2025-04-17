@@ -124,7 +124,7 @@ async def process_pitch_deck(
             }
             print("Initial state:", initial_state)
             # Invoke the graph with our initial state
-            result = graph.invoke(initial_state)
+            result = await graph.ainvoke(initial_state)
             
             # Check for errors
             if "error" in result:
@@ -139,7 +139,8 @@ async def process_pitch_deck(
                 "original_filename": original_filename,
                 "summary": result.get("summary_text"),
                 "embedding_status": result.get("embedding_status"),
-                "final_report": result.get("final_report")
+                "final_report": result.get("final_report"),
+                "news": result.get("news")
             }
             
         except HTTPException:

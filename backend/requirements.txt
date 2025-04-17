@@ -26,3 +26,9 @@ snowflake-connector-python
 supabase
 bcrypt
 python-multipart
+
+tavily-python
+mcp[cli]
+snowflake-snowpark-python
+sqlparse
+

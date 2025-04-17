@@ -208,7 +208,7 @@ def refine_data(conn, cur):
                         WHEN upper(Revenue) ILIKE '$%B' THEN TRY_TO_DOUBLE(REPLACE(REPLACE(Revenue, '$', ''), 'B', '')) * 1000000000
                         WHEN upper(Revenue) LIKE '$%'     THEN TRY_TO_DOUBLE(REPLACE(Revenue, '$', ''))
                         ELSE TRY_TO_DOUBLE(Revenue)
-                    END AS Revenue_USD,
+                    END AS Revenue,
 
                     TRY_TO_DOUBLE(REPLACE(Emp_Growth_Percent, '%', '')) AS Emp_Growth_Percent
 
@@ -233,7 +233,7 @@ def create_combined_view(conn, cur):
                 r.Company,
                 o.short_description,
                 r.Industry,
-                r.Revenue AS Revenue_USD,
+                r.Revenue AS Revenue,
                 r.Employees,
                 r.Emp_Growth_Percent,
                 r.City,

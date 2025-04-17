@@ -14,4 +14,5 @@ class AnalysisState(TypedDict):
     industry_report: str
     competitors: List[Dict]
     final_report: str
+    news: List[Dict]
 

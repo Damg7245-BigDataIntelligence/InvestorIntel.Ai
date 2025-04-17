@@ -25,7 +25,7 @@ def growjo_s3_upload():
     It can be used to call the scraping process from other parts of the code.
     """
     print("ok")
-    csv_content, pages = scrape_growjo_data_by_page(4001,5000)
+    csv_content, pages = scrape_growjo_data_by_page(5001,6000)
     now = datetime.now()
 
     # Format the datetime to YYYY-MM-DD_HH-MM-SS

@@ -56,6 +56,7 @@ class SnowflakeManager:
                 INDUSTRY VARCHAR(255),
                 SHORT_DESCRIPTION TEXT,
                 ANALYSIS_REPORT TEXT,
+                NEWS TEXT,
                 WEBSITE_URL VARCHAR(1000),
                 S3_LOCATION VARCHAR(1000),
                 ORIGINAL_FILENAME VARCHAR(255),

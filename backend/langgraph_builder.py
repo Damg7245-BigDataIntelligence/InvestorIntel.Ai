@@ -6,6 +6,8 @@ from state import AnalysisState
 from pinecone_pipeline.summary import summarize_pitch_deck_with_gemini
 from pinecone_pipeline.embedding_manager import EmbeddingManager
 from s3_utils import upload_pitch_deck_to_s3
+import snowflake.connector
+from pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -23,7 +25,7 @@ except Exception as e:
 # -------------------------
 def generate_gemini_prompt(startup, industry_report, competitors):
     competitor_section = "\n".join([
-        f"{c['COMPANY']}: {c['SHORT_DESCRIPTION']} | Revenue: ${c['REVENUE_USD']}, Growth: {c['EMP_GROWTH_PERCENT']}%"
+        f"{c['COMPANY']}: {c['SHORT_DESCRIPTION']} | Revenue: ${c['REVENUE']}, Growth: {c['EMP_GROWTH_PERCENT']}%"
         for c in competitors
     ])
 
@@ -56,8 +58,6 @@ Also include a final section: "Market Size Validation & Commentary".
 # -------------------------
 # Hardcoded Snowflake Logic (MCP-less)
 # -------------------------
-import snowflake.connector
-
 SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER")
 SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
@@ -98,10 +98,10 @@ def get_industry_report(industry_name: str):
 
 def get_top_companies(industry_name: str):
     query = """
-    SELECT Company, Industry, Emp_Growth_Percent, Revenue_Usd, Short_Description 
+    SELECT Company, Industry, Emp_Growth_Percent, Revenue, Short_Description 
     FROM INVESTOR_INTEL_DB.GROWJO_SCHEMA.COMPANY_MERGED_VIEW
     WHERE Industry = %s
-    ORDER BY Revenue_Usd DESC, Emp_Growth_Percent DESC
+    ORDER BY Revenue DESC, Emp_Growth_Percent DESC
     LIMIT 10
     """
     result = snowflake_query(query, (industry_name,))
@@ -282,6 +282,51 @@ def store_report(state):
     store_analysis_report(state["startup_name"], state["final_report"])
     return state
 
+async def fetch_news(state):
+    """Fetch news using the websearch agent and store in Snowflake"""
+    if not state.get("summary") or not isinstance(state["summary"], dict):
+        state["news"] = "No news available - summary data missing"
+        return state
+    
+    startup_name = state["summary"].get("STARTUP_NAME")
+    industry = state["summary"].get("INDUSTRY")
+    
+    if not startup_name or not industry:
+        state["news"] = "No news available - startup name or industry not specified"
+        return state
+    
+    # Call the websearch agent
+    results, search_type = await google_search_with_fallback(startup_name, industry)
+    news_content = "\n".join([f"{r.get('title', '')}: {r.get('url', '')}" for r in results.get("results", [])])
+    
+    # Store the news in the state
+    state["news"] = news_content
+    print("news_content", news_content)
+    # Update the Snowflake table with the news
+    store_news_in_snowflake(startup_name, news_content)
+    
+    return state
+
+def store_news_in_snowflake(startup_name: str, news: str):
+    """Store the news in the Snowflake table"""
+    query = """
+    UPDATE INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY
+    SET news = %s
+    WHERE startup_name = %s
+    """
+    conn = snowflake.connector.connect(
+        user=SNOWFLAKE_USER,
+        password=SNOWFLAKE_PASSWORD,
+        account=SNOWFLAKE_ACCOUNT,
+        warehouse=SNOWFLAKE_WAREHOUSE,
+        database="INVESTOR_INTEL_DB"
+    )
+    cursor = conn.cursor()
+    cursor.execute(query, (news, startup_name))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 # -------------------------
 # Graph Compiler
 # -------------------------
@@ -296,6 +341,7 @@ def build_analysis_graph():
     builder.add_node("fetch_competitors", fetch_competitors)
     builder.add_node("generate_report", generate_report)
     builder.add_node("store_report", store_report)
+    builder.add_node("fetch_news", fetch_news)  # New node for fetching news
 
     # Set conditional starting point
     builder.set_conditional_entry_point(
@@ -303,11 +349,13 @@ def build_analysis_graph():
     )
     
     # Add edges
-    builder.add_edge("process_pitch_deck", "fetch_summary")
-    builder.add_edge("fetch_summary", "fetch_industry_report")
-    builder.add_edge("fetch_industry_report", "fetch_competitors")
-    builder.add_edge("fetch_competitors", "generate_report")
-    builder.add_edge("generate_report", "store_report")
-    builder.add_edge("store_report", END)
+    builder.add_edge("process_pitch_deck", "fetch_news")
+    # builder.add_edge("process_pitch_deck", "fetch_summary")
+    # builder.add_edge("fetch_summary", "fetch_industry_report")
+    # builder.add_edge("fetch_industry_report", "fetch_competitors")
+    # builder.add_edge("fetch_competitors", "generate_report")
+    # builder.add_edge("generate_report", "store_report")
+    # builder.add_edge("store_report", "fetch_news")  # Add edge to fetch news
+    builder.add_edge("fetch_news", END)  # End after fetching news
 
     return builder.compile()

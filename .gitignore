@@ -21,3 +21,5 @@ env2/
 
 # Ignore test files
 test/
+
+node_modules/
