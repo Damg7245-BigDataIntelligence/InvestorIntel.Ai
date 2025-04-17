@@ -2,6 +2,7 @@
 dotenv
 boto3
 pandas
+fastapi
 
 #growjo scraper
 selenium
@@ -32,3 +33,13 @@ mcp[cli]
 snowflake-snowpark-python
 sqlparse
 
+mcp
+mcp-agent
+openai
+openai-tools
+openai-agents
+openai-agents-mcp
+
+tensorflow
+keras
+tf-keras

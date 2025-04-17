@@ -1,52 +1,44 @@
-import json
-from mcp.client.stdio import stdio_client
-from mcp import ClientSession, StdioServerParameters
-import os
-import asyncio
+import asyncio, json
+import shutil, os
+from dotenv import load_dotenv
+from agents import Agent, Runner, trace
+from agents.mcp import MCPServerStdio
+from typing import Dict, Any
 
-MCP_SERVER_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../build/index.js"))
+load_dotenv()
 
-server_params = StdioServerParameters(
-    command="node",
-    args=[MCP_SERVER_PATH],
-    env=None
-)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
-async def mcp_search(query: str, num: int = 5):
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            print("Initializing session")
-            await session.initialize()
-            print("Calling tool")
-            result = await session.call_tool("search", {"query": query, "num": num})
-            print("Result:", result)
-            try:
-                return json.loads(result.content[0].text)
-            except Exception as e:
-                print("Error parsing response:", e)
-                return []
+GOOGLE_SEARCH_ENGINE_ID = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-async def google_search_with_fallback(startup_name, industry):
-    """
-    Runs a blocking wrapper to call async MCP Google Search tool.
-    """
-    search_type = "Startup-Specific"
-    startup_query = f"recent news or innovations or articles of {startup_name}"
-    
-    items = await mcp_search(startup_query, num=5)
+async def google_search_with_fallback(startup_name: str, industry_name: str):
+    print("Initializing MCP Google Search Agent")
+    async with MCPServerStdio(
+        cache_tools_list=True,
+        params={
+            "command": "npx",
+            "args": ["-y", "@adenot/mcp-google-search"],
+            "env": {
+                "GOOGLE_SEARCH_ENGINE_ID": f"{GOOGLE_SEARCH_ENGINE_ID}",
+                "GOOGLE_API_KEY": f"{GOOGLE_API_KEY}"
+            }
+        },
+    ) as server:
+        print("MCPServerStdio initialized")
+        with trace(workflow_name="MCP Google Search"):
+            print(await server.list_tools())
+            searchagent: Agent = Agent(
+                name="Google Search Agent",
+                instructions="You are a Google Search Agent. You will receive a query and return the results in JSON format.",
+                mcp_servers=[server],
+                model="gpt-4o-mini"
+            )
+            query = f"recent news or innovations or articles of {startup_name} or {industry_name}"
+            results = await Runner.run(searchagent, query)
+            print("Results:", results.final_output)
+            return {"results": results.final_output}
 
-    # Check relevance
-    if not any(startup_name.lower() in (item["title"] + item["snippet"]).lower() for item in items):
-        search_type = "Industry-Based"
-        industry_query = f"{industry} industry trends recent news US market"
-        items = await mcp_search(industry_query, num=5)
-
-    return {"results": items}, search_type
-
-# if __name__ == "__main__":
-#     async def main():
-#         result, kind = await google_search_with_fallback("OpenAI", "AI")
-#         for i, r in enumerate(result["results"], 1):
-#             print(f"{i}. {r['title']} ({r['link']})")
-
-#     asyncio.run(main())
+if __name__ == "__main__":
+    print(asyncio.run(google_search_with_fallback("Elon Musk", "AI")))

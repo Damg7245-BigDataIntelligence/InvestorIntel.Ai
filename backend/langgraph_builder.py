@@ -349,13 +349,12 @@ def build_analysis_graph():
     )
     
     # Add edges
-    builder.add_edge("process_pitch_deck", "fetch_news")
-    # builder.add_edge("process_pitch_deck", "fetch_summary")
-    # builder.add_edge("fetch_summary", "fetch_industry_report")
-    # builder.add_edge("fetch_industry_report", "fetch_competitors")
-    # builder.add_edge("fetch_competitors", "generate_report")
-    # builder.add_edge("generate_report", "store_report")
-    # builder.add_edge("store_report", "fetch_news")  # Add edge to fetch news
+    builder.add_edge("process_pitch_deck", "fetch_summary")
+    builder.add_edge("fetch_summary", "fetch_industry_report")
+    builder.add_edge("fetch_industry_report", "fetch_competitors")
+    builder.add_edge("fetch_competitors", "generate_report")
+    builder.add_edge("generate_report", "store_report")
+    builder.add_edge("store_report", "fetch_news")  # Add edge to fetch news
     builder.add_edge("fetch_news", END)  # End after fetching news
 
     return builder.compile()
