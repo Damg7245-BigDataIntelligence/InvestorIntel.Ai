@@ -8,6 +8,7 @@ myenv/
 venv/
 env/
 env2/
+myenv2/
 
 # Ignore OS files
 .DS_Store
