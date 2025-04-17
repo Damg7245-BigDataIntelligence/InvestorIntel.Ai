@@ -51,6 +51,17 @@ def parse_card_data(soup):
 # Usage
 if __name__ == "__main__":
     data = get_recent_updates()
+    print(data)
+    print("Data length:"+str(len(data))+" entry type"+str(type(data)))
     print(f"Scraped {len(data)} entries:")
     for entry in data:
         print(entry)
+
+
+# data = [
+#             {'company': 'SSI Inc.', 'funding': '$2000M', 'valuation': '$B', 'revenue': '$100M', 'growth': '114%'},
+#             {'company': 'Marshmallow', 'funding': '$90M', 'valuation': '$2B', 'revenue': '$100M', 'growth': '32%'},
+#             {'company': 'Jobandtalent', 'funding': '$103M', 'valuation': '$1.5B', 'revenue': '$100M', 'growth': '6%'},
+#             {'company': 'incident.io', 'funding': '$62M', 'valuation': '$400M', 'revenue': '$100M', 'growth': '-9%'},
+#             {'company': 'Meanwhile', 'funding': '$40M', 'valuation': '$190M', 'revenue': '$100M', 'growth': '25%'}
+#         ]
