@@ -1,4 +1,5 @@
 import streamlit as st
+import requests
 import os 
 from PIL import Image
 import base64
@@ -12,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 # ✅ Now do the imports
-from backend.database import investor_auth, investorIntel_entity
+#from backend.database import investor_auth, investorIntel_entity
 
 def render():
     # Session state defaults
@@ -99,19 +100,26 @@ def render():
             st.session_state.website_url = st.text_input("Website URL", value=st.session_state.website_url)
             st.session_state.linkedin_url = st.text_input("LinkedIn Profile URL", value=st.session_state.linkedin_url)
 
-            investor_options = investorIntel_entity.get_all_investor_usernames()
-            
-            # Force 'investors' to always be a list
+            # investor_options = investorIntel_entity.get_all_investor_usernames()
+            resp = requests.get(f"{FAST_API_URL}/fetch-investor-usernames")
+            print(resp)
+            if resp.status_code == 200:
+                investor_options = resp.json()       # <-- this is your List[str]
+            else:
+                st.error("Could not load investor list.")
+                investor_options = []
+
+            # ensure session_state.investors is always a list
             if not isinstance(st.session_state.get("investors"), list):
                 st.session_state.investors = []
 
-            # Now clean defaults
+            # filter any stale defaults
             valid_investor_defaults = [
                 label for label in st.session_state.investors
                 if label in investor_options
             ]
 
-            # Render dropdown
+            # render
             selected_labels = st.multiselect(
                 "Select Potential Investors",
                 options=investor_options,
@@ -139,20 +147,34 @@ def render():
                         st.markdown(f"- ❌ **{field}**")
                 else:
                     try:
-                        investorIntel_entity.insert_startup(
-                            st.session_state.startup_name,
-                            st.session_state.founder_name,
-                            st.session_state.email_address,
-                            st.session_state.website_url,
-                            st.session_state.linkedin_url,
-                            st.session_state.valuation_ask,
-                            st.session_state.industry
-                        )
-                        investorIntel_entity.map_startup_to_investors(
-                            st.session_state.startup_name,
-                            selected_usernames
-                        )
 
+                        # investorIntel_entity.insert_startup(
+                        #     st.session_state.startup_name,
+                        #     st.session_state.founder_name,
+                        #     st.session_state.email_address,
+                        #     st.session_state.website_url,
+                        #     st.session_state.linkedin_url,
+                        #     st.session_state.valuation_ask,
+                        #     st.session_state.industry
+                        # )
+                        # investorIntel_entity.map_startup_to_investors(
+                        #     st.session_state.startup_name,
+                        #     selected_usernames
+                        # )
+
+                        requests.post(
+                            f"{FAST_API_URL}/add-startup-info",
+                            json={
+                                "startup_name": st.session_state.startup_name,
+                                "founder_name": st.session_state.founder_name,
+                                "email_address": st.session_state.email_address,
+                                "website_url": st.session_state.website_url,
+                                "linkedin_url": st.session_state.linkedin_url,
+                                "valuation_ask": st.session_state.valuation_ask,
+                                "industry": st.session_state.industry,
+                                "investor_usernames": selected_usernames
+                            }
+                        )
                         st.session_state.pitch_deck_uploaded = True
                         st.success("✅ Your pitch deck has been submitted successfully! Our team or investors will reach out to you if there's a fit. 🚀")
 
@@ -192,10 +214,15 @@ def render():
                 password = st.text_input("Password", type="password")
                 if st.button("Login"):
                     if username and password:
-                        response = investor_auth.login_investor(username, password)
-                        if response["status"] == "success":
+                        #response = investor_auth.login_investor(username, password)
+                        response = requests.post(
+                            f"{FAST_API_URL}/investor-login-auth", 
+                            json={"username": username, "password": password}
+                        )
+                        result = response.json()
+                        if result.get("status") == "success":
                             st.session_state.is_logged_in = True
-                            st.session_state.username = response.get("username", "")
+                            st.session_state.username = result.get("username", "")
                             st.success(f"✅ Welcome, {st.session_state.username}!")
 
                             # Clear login fields
@@ -203,7 +230,7 @@ def render():
                             st.session_state.login_password = ""
 
                             st.session_state.page = "investor_dashboard"
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error(f"❌ {response['message']}")
                     else:
@@ -212,7 +239,7 @@ def render():
                 st.markdown("Don't have an account?")
                 if st.button("Go to Signup"):
                     st.session_state.show_signup = True
-                    st.experimental_rerun()
+                    st.rerun()
             else:
                 st.markdown("### 📝 Create Your Investor Account")
 
@@ -225,34 +252,57 @@ def render():
                 if st.button("Sign Up"):
                     if all([st.session_state.inv_first_name, st.session_state.inv_last_name,
                             st.session_state.inv_username, st.session_state.inv_email, st.session_state.inv_password]):
-                        response = investor_auth.signup_investor(
-                            st.session_state.inv_first_name,
-                            st.session_state.inv_last_name,
-                            st.session_state.inv_username,
-                            st.session_state.inv_email,
-                            st.session_state.inv_password
+                        # response = investor_auth.signup_investor(
+                        #     st.session_state.inv_first_name,
+                        #     st.session_state.inv_last_name,
+                        #     st.session_state.inv_username,
+                        #     st.session_state.inv_email,
+                        #     st.session_state.inv_password
+                        # )
+
+                        response = requests.post(f"{FAST_API_URL}/investor-signup-auth", 
+                            json={"first_name": st.session_state.inv_first_name,
+                                  "last_name": st.session_state.inv_last_name,
+                                  "username": st.session_state.inv_username,
+                                  "email": st.session_state.inv_email,
+                                  "password": st.session_state.inv_password}
                         )
 
-                        if response["status"] == "success":
+                        result = response.json()
+                        if result["status"] == "success":
                             st.success("🎉 Account created! Please log in.")
-                            investorIntel_entity.insert_investor(
-                                st.session_state.inv_first_name,
-                                st.session_state.inv_last_name,
-                                st.session_state.inv_email,
-                                st.session_state.inv_username
+                            # investorIntel_entity.insert_investor(
+                            #     st.session_state.inv_first_name,
+                            #     st.session_state.inv_last_name,
+                            #     st.session_state.inv_email,
+                            #     st.session_state.inv_username
+                            # )
+                            resp2 = requests.post(
+                                f"{FAST_API_URL}/add-investor-info",
+                                json={
+                                    "first_name": st.session_state.inv_first_name,
+                                    "last_name": st.session_state.inv_last_name,
+                                    "email": st.session_state.inv_email,
+                                    "username": st.session_state.inv_username
+                                }
                             )
+                            if resp2.ok:
+                                st.success("✅ Account created successfully.")
+                            else:
+                                st.error(f"❌ Failed to create an investor account: HTTP {resp2.status_code}")
+
 
                             # Clear sign-up fields
                             for field in ["inv_first_name", "inv_last_name", "inv_username", "inv_email", "inv_password"]:
                                 st.session_state[field] = ""
 
                             st.session_state.show_signup = False
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
-                            st.error(f"❌ {response['message']}")
+                            st.error(f"{result['message']}")
                     else:
                         st.error("⚠️ Fill out all fields.")
 
                 if st.button("Back to Login"):
                     st.session_state.show_signup = False
-                    st.experimental_rerun()
+                    st.rerun()

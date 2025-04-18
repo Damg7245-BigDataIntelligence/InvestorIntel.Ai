@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from backend.langgraph_builder import build_analysis_graph
 from backend.pinecone_pipeline.embedding_manager import EmbeddingManager
 from backend.startup_check import startup_exists_check, StartupCheckRequest
-from backend.database import db_utils, investor_auth
+from backend.database import db_utils, investor_auth, investorIntel_entity
 import os
 import tempfile
 import shutil
@@ -66,6 +66,16 @@ class InvestorSignupRequest(BaseModel):
 class InvestorLoginRequest(BaseModel):
     username: str
     password: str
+
+class StartupStatusRequest(BaseModel):
+    investor_id: int
+    status: str
+
+class StartupInfoRequest(BaseModel):
+    startup_id: int
+
+class InvestorByUsernameRequest(BaseModel):
+    username: str
 
 # ------- API Endpoints -------
 @app.get("/")
@@ -180,7 +190,7 @@ async def process_pitch_deck(
 @app.post("/add-startup-info")
 def add_startup(data: StartupRequest):
     try:
-        db_utils.insert_startup(
+        investorIntel_entity.insert_startup(
             data.startup_name,
             data.founder_name,
             data.email_address,
@@ -189,7 +199,7 @@ def add_startup(data: StartupRequest):
             data.valuation_ask,
             data.industry
         )
-        db_utils.map_startup_to_investors(
+        investorIntel_entity.map_startup_to_investors(
             data.startup_name,
             data.investor_usernames
         )
@@ -199,9 +209,9 @@ def add_startup(data: StartupRequest):
     
 
 @app.get("/fetch-investor-usernames")
-def get_all_investor_usernames():
+def fetch_investor_usernames():
     try:
-        usernames = db_utils.get_all_investor_usernames()
+        usernames = investorIntel_entity.get_all_investor_usernames()
         return usernames
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -209,7 +219,7 @@ def get_all_investor_usernames():
 @app.post("/add-investor-info")
 def add_investor(data: InvestorRequest):
     try:
-        db_utils.insert_investor(
+        investorIntel_entity.insert_investor(
             data.first_name,
             data.last_name,
             data.email,
@@ -236,10 +246,63 @@ def signup_investor(data: InvestorSignupRequest):
 @app.post("/investor-login-auth")
 def login_investor(data: InvestorLoginRequest):
     try:
-        result = investor_auth.login_investor(data.username, data.password)
-        return result  # should return dict like {"status": "success", "username": "janvi123"}
+        return investor_auth.login_investor(data.username, data.password)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+@app.post("/fetch-investor-info")
+def fetch_investor_info(username: str):
+    try:
+        investor_info = db_utils.get_investor_info(username)
+        if investor_info:
+            return investor_info
+        else:
+            raise HTTPException(status_code=404, detail="Investor not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/fetch-startups-by-status")
+def fetch_startups_by_status(req: StartupStatusRequest):
+    try:
+        # db_utils returns a pandas.DataFrame
+        df: pd.DataFrame = db_utils.get_startups_by_status(
+            req.investor_id, req.status
+        )
+        # convert to list of dicts
+        startups = df.to_dict(orient="records")
+        return {"status": "success", "startups": startups}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/fetch-startup-info")
+def fetch_startup_info(req: StartupInfoRequest):
+    try:
+        info = db_utils.get_startup_info_by_id(req.startup_id)
+        if info:
+            return {
+                "status": "success",
+                "startup": info
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Startup not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        # unexpected errors get turned into 500s
+        raise HTTPException(status_code=500, detail=str(e))
 
-
+@app.post("/fetch-investor-by-username")
+def fetch_investor_by_username(req: InvestorByUsernameRequest):
+    try:
+        info = db_utils.get_investor_by_username(req.username)
+        if info:
+            return {
+                "status": "success",
+                "investor": info
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Investor not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

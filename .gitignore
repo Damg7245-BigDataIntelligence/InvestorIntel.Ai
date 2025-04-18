@@ -11,6 +11,7 @@ env2/
 myenv2/
 venv2/
 venv3/
+env1/
 
 # Ignore OS files
 .DS_Store

@@ -1,9 +1,12 @@
 import streamlit as st
+import requests
 import pandas as pd
 from PIL import Image
 import os
 import importlib.util
 import sys
+
+FAST_API_URL = "http://localhost:8000"
 
 # Dynamically add project root (InvestorIntel.Ai/) to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
@@ -11,7 +14,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 # ✅ Now do the imports
-from backend.database import db_utils
+# from backend.database import db_utils
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 if PROJECT_ROOT not in sys.path:
@@ -59,11 +62,10 @@ def dashboard_header(first_name):
         if st.button("🚪 Logout"):
             st.session_state.page = "home"
             st.session_state.is_logged_in = False
-            st.experimental_rerun()
+            st.rerun()
 
     # 🧱 Horizontal divider comes immediately after header
     st.markdown("<hr style='border: 1px solid #ccc; margin-top: 0;'>", unsafe_allow_html=True)
-
 
 def dashboard_sidebar(sidebar_col, investor_id):
     with sidebar_col:
@@ -73,26 +75,40 @@ def dashboard_sidebar(sidebar_col, investor_id):
             # 📌 Status Filters
             st.markdown("### 📌 Select Startup")
             status_options = {
-                "New": "Not Viewed",
+                "New":      "Not Viewed",
                 "Reviewed": "Decision Pending",
-                "Funded": "Funded",
+                "Funded":   "Funded",
                 "Rejected": "Rejected"
             }
             selected_status_key = st.radio("**Stage:**", list(status_options.keys()))
             selected_status = status_options[selected_status_key]
 
-            # 📄 Startup List
-            startup_list = db_utils.get_startups_by_status(investor_id, selected_status)
-            if startup_list.empty:
+            # 📄 Startup List via FastAPI
+            resp = requests.post(
+                f"{FAST_API_URL}/fetch-startups-by-status",
+                json={"investor_id": investor_id, "status": selected_status}
+            )
+            data = resp.json()
+            startup_list = data.get("startups", [])
+
+            if not startup_list:
                 st.info("No startups found in this category.")
                 st.session_state.selected_startup_id = None
             else:
-                startup_names = startup_list["startup_name"].tolist()
-                selected_startup_name = st.selectbox("**📄 Startups:**", startup_names)
-                selected_startup_id = startup_list[startup_list["startup_name"] == selected_startup_name]["startup_id"].values[0]
-                st.session_state.selected_startup_id = selected_startup_id
+                # Extract just the names for the Selectbox
+                startup_names = [s["startup_name"] for s in startup_list]
+                selected_name  = st.selectbox("**📄 Startups:**", startup_names)
 
-            st.markdown("</div>", unsafe_allow_html=True)  # Close sidebar container
+                # Find the matching ID
+                selected_id = next(
+                    s["startup_id"]
+                    for s in startup_list
+                    if s["startup_name"] == selected_name
+                )
+                st.session_state.selected_startup_id = selected_id
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
 
 def dashboard_main(main_col):
     with main_col:
@@ -101,7 +117,18 @@ def dashboard_main(main_col):
             return
 
         # Load startup data once
-        startup_data = db_utils.get_startup_info_by_id(st.session_state.selected_startup_id)
+        # startup_data = db_utils.get_startup_info_by_id(st.session_state.selected_startup_id)
+        resp = requests.post(
+            f"{FAST_API_URL}/fetch-startup-info",
+            json={"startup_id": st.session_state.selected_startup_id}
+        )
+        data = resp.json()
+        if data.get("status") == "success":
+            startup_data = data["startup"]
+            # e.g. display details:
+            # st.write(startup_data)
+        else:
+            st.error(data.get("detail", "Unknown error"))
 
         # Create Tabs
         tab1, tab2, tab3, tab4 = st.tabs(["📄 Summary", "📊 Competitor Analysis", "📈 Market Analysis", "📰 News Trends"])
@@ -144,10 +171,22 @@ def render():
     if not st.session_state.get("is_logged_in"):
         st.warning("You must log in first.")
         st.session_state.page = "home"
-        st.experimental_rerun()
+        st.rerun()
 
     investor_username = st.session_state.username
-    investor_info = db_utils.get_investor_by_username(investor_username)
+    # investor_info = db_utils.get_investor_by_username(investor_username)
+    resp = requests.post(
+        f"{FAST_API_URL}/fetch-investor-by-username",
+        json={"username": st.session_state.username}
+    )
+    data = resp.json()
+    if data.get("status") == "success":
+        investor_info = data["investor"]
+        # e.g. display fields:
+        #st.write(investor_info)
+    else:
+        st.error(data.get("detail", "Unknown error"))
+
     investor_id = investor_info["INVESTOR_ID"]
     first_name = investor_info["FIRST_NAME"]
 
