@@ -1,9 +1,10 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from langgraph_builder import build_analysis_graph
-from pinecone_pipeline.embedding_manager import EmbeddingManager
-from startup_check import startup_exists_check, StartupCheckRequest
+from backend.langgraph_builder import build_analysis_graph
+from backend.pinecone_pipeline.embedding_manager import EmbeddingManager
+from backend.startup_check import startup_exists_check, StartupCheckRequest
+from backend.database import db_utils, investor_auth
 import os
 import tempfile
 import shutil
@@ -18,7 +19,7 @@ app = FastAPI(
 )
 
 # Create the langgraph
-graph = None
+graph = build_analysis_graph()
 
 # Add CORS middleware to allow requests from the Streamlit frontend
 app.add_middleware(
@@ -38,6 +39,33 @@ class PitchDeckRequest(BaseModel):
     industry: Optional[str] = None
     linkedin_urls: Optional[List[str]] = []
     website_url: Optional[str] = None
+
+class StartupRequest(BaseModel):
+    startup_name: str
+    founder_name: str
+    email_address: str
+    website_url: str
+    linkedin_url: str
+    valuation_ask: float
+    industry: str
+    investor_usernames: list[str]
+
+class InvestorRequest(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    username: str
+
+class InvestorSignupRequest(BaseModel):
+    first_name: str
+    last_name: str
+    username: str
+    email: str
+    password: str
+
+class InvestorLoginRequest(BaseModel):
+    username: str
+    password: str
 
 # ------- API Endpoints -------
 @app.get("/")
@@ -122,11 +150,8 @@ async def process_pitch_deck(
                 "website_url": website_url,
                 "original_filename": original_filename
             }
+            print("Initial state:", initial_state)
             # Invoke the graph with our initial state
-            global graph
-            if not graph:
-                graph = build_analysis_graph()
-
             result = await graph.ainvoke(initial_state)
             
             # Check for errors
@@ -151,3 +176,70 @@ async def process_pitch_deck(
         except Exception as e:
             print(traceback.format_exc())
             raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+        
+@app.post("/add-startup-info")
+def add_startup(data: StartupRequest):
+    try:
+        db_utils.insert_startup(
+            data.startup_name,
+            data.founder_name,
+            data.email_address,
+            data.website_url,
+            data.linkedin_url,
+            data.valuation_ask,
+            data.industry
+        )
+        db_utils.map_startup_to_investors(
+            data.startup_name,
+            data.investor_usernames
+        )
+        return {"status": "success", "message": "Startup added and mapped successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.get("/fetch-investor-usernames")
+def get_all_investor_usernames():
+    try:
+        usernames = db_utils.get_all_investor_usernames()
+        return usernames
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/add-investor-info")
+def add_investor(data: InvestorRequest):
+    try:
+        db_utils.insert_investor(
+            data.first_name,
+            data.last_name,
+            data.email,
+            data.username
+        )
+        return {"status": "success", "message": "Investor inserted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/investor-signup-auth")
+def signup_investor(data: InvestorSignupRequest):
+    try:
+        result = investor_auth.signup_investor(
+            data.first_name,
+            data.last_name,
+            data.username,
+            data.email,
+            data.password
+        )
+        return result  # assuming it returns a dict like {"status": "success", ...}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/investor-login-auth")
+def login_investor(data: InvestorLoginRequest):
+    try:
+        result = investor_auth.login_investor(data.username, data.password)
+        return result  # should return dict like {"status": "success", "username": "janvi123"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+

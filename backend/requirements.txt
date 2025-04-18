@@ -43,3 +43,5 @@ openai-agents-mcp
 tensorflow
 keras
 tf-keras
+
+matplotlib

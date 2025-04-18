@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 import os
 import sys
+from unittest.mock import patch, MagicMock, AsyncMock
 
-# Add the project root to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 sys.path.append(project_root)
 
@@ -11,7 +11,6 @@ from main import app
 
 client = TestClient(app)
 
-# Sample data for testing
 SAMPLE_PDF_PATH = "tests/test_data/sample_pitch_deck.pdf"
 SAMPLE_STARTUP_NAME = "TestStartup"
 SAMPLE_INDUSTRY = "AI"
@@ -20,7 +19,6 @@ SAMPLE_WEBSITE_URL = "https://teststartup.com"
 
 @pytest.fixture(scope="module")
 def setup_environment():
-    # Set up environment variables for testing
     os.environ["AWS_ACCESS_KEY_ID"] = "test"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "test"
     os.environ["AWS_S3_BUCKET_NAME"] = "test-bucket"
@@ -32,13 +30,23 @@ def setup_environment():
     os.environ["SNOWFLAKE_DATABASE"] = "test_db"
     os.environ["SNOWFLAKE_ROLE"] = "test_role"
     yield
-    # Teardown if necessary
+
+@pytest.fixture(autouse=True)
+def mock_graph_and_deps():
+    fake_graph = MagicMock()
+    fake_graph.ainvoke = AsyncMock(return_value={
+        "s3_location": "https://mock-s3.com/pitchdeck.pdf",
+        "summary_text": "This is a mocked summary.",
+        "embedding_status": "completed",
+        "final_report": "This is a mocked final report.",
+        "news": [{"title": "Mock News", "url": "https://mocknews.com"}]
+    })
+    with patch('main.build_analysis_graph', return_value=fake_graph):
+        yield
 
 def test_process_pitch_deck_integration(setup_environment):
-    # Ensure the sample PDF exists
     assert os.path.exists(SAMPLE_PDF_PATH), "Sample PDF file is missing."
 
-    # Simulate a file upload
     with open(SAMPLE_PDF_PATH, "rb") as file:
         response = client.post(
             "/process-pitch-deck",
@@ -50,9 +58,9 @@ def test_process_pitch_deck_integration(setup_environment):
                 "website_url": SAMPLE_WEBSITE_URL
             }
         )
-    
+
     assert response.status_code == 200
     data = response.json()
-    assert "s3_location" in data
-    assert "summary" in data
-    assert "final_report" in data
+    assert data["s3_location"] == "https://mock-s3.com/pitchdeck.pdf"
+    assert data["summary"] == "This is a mocked summary."
+    assert data["final_report"] == "This is a mocked final report."
