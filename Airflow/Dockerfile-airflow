@@ -15,5 +15,9 @@ RUN pip install --no-cache-dir selenium docker bs4 lxml
 USER root
 RUN mkdir -p /usr/local/airflow/downloads && chown airflow:docker /usr/local/airflow/downloads
 
+# RUN pip install -r requirements.txt
 # Set back to airflow for rest of container life
+COPY requirements.txt /requirements.txt
+RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt
 USER airflow
+

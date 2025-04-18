@@ -1,0 +1,12 @@
+apache-airflow
+requests
+playwright
+boto3 (for S3)
+snowflake-connector-python
+pinecone-client
+google-cloud-aiplatform (for Gemini API)
+langchain (for text chunking)
+sentence-transformers (for embeddings)
+python-dotenv (for environment variables)
+typing-extensions
+google-generativeai
