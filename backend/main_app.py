@@ -15,6 +15,10 @@ import traceback
 from typing import List, Optional
 from s3_utils import upload_pitch_deck_to_s3
 from pinecone_pipeline.embedding_manager import EmbeddingManager
+from database.snowflake_connect import get_connection
+
+# Initialize Snowflake connection at startup
+conn, cursor = get_connection()
 
 embedding_manager = EmbeddingManager()
 gemini_assistant = GeminiAssistant()
@@ -51,8 +55,12 @@ class StartupRequest(BaseModel):
     startup_name: str
     email_address: str
     website_url: str
-    valuation_ask: float
     industry: str
+    funding_amount_requested: float
+    round_type: str
+    equity_offered: float
+    pre_money_valuation: float
+    post_money_valuation: float
     investor_usernames: list[str]
     founder_list: list[dict]
 
@@ -86,6 +94,15 @@ class InvestorByUsernameRequest(BaseModel):
 class ColumnRequest(BaseModel):
     column_name: str
     startup_id:   int
+
+class UpdateStatusRequest(BaseModel):
+    investor_id: int
+    startup_id: int
+    status: str
+
+class CompetitorAnalysisRequest(BaseModel):
+    industry: str
+    limit: int = 5  # Default to top 5 competitors
 
 # ------- API Endpoints -------
 @app.get("/")
@@ -125,7 +142,12 @@ async def process_pitch_deck(
     startup_name: str = Form(None),
     industry: str = Form(None),
     linkedin_urls: str = Form(None),
-    website_url: str = Form(None)
+    website_url: str = Form(None),
+    funding_amount: str = Form(None),
+    round_type: str = Form(None),
+    equity_offered: str = Form(None),
+    pre_money_valuation: str = Form(None),
+    post_money_valuation: str = Form(None)
 ):
     """
     Process a pitch deck PDF, generate summary, and analysis report all at once.
@@ -146,6 +168,8 @@ async def process_pitch_deck(
     startup_name = startup_name or "Unknown"
     industry = industry or "Unknown"
     print("Startup name:", startup_name)
+    print("Funding info:", funding_amount, round_type, equity_offered)
+    
     # Create a temporary directory to store the uploaded file
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create a temporary filename for local storage
@@ -161,14 +185,22 @@ async def process_pitch_deck(
         
         # Process with langgraph
         try:
-            # Prepare the initial state for the graph
+            # Prepare the initial state for the graph with funding information
             initial_state = {
                 "pdf_file_path": file_path,
                 "startup_name": startup_name,
                 "industry": industry,
                 "linkedin_urls": linkedin_urls_list,
                 "website_url": website_url,
-                "original_filename": original_filename
+                "original_filename": original_filename,
+                # Add funding information to the initial state
+                "funding_info": {
+                    "funding_amount": funding_amount,
+                    "round_type": round_type,
+                    "equity_offered": equity_offered,
+                    "pre_money_valuation": pre_money_valuation,
+                    "post_money_valuation": post_money_valuation
+                }
             }
             global graph
             if not graph:
@@ -191,7 +223,14 @@ async def process_pitch_deck(
                 "embedding_status": result.get("embedding_status"),
                 "final_report": result.get("final_report"),
                 "news": result.get("news"),
-                "competitor_visualizations": result.get("competitor_visualizations")
+                "competitor_visualizations": result.get("competitor_visualizations"),
+                "funding_info": {
+                    "funding_amount": funding_amount,
+                    "round_type": round_type,
+                    "equity_offered": equity_offered,
+                    "pre_money_valuation": pre_money_valuation,
+                    "post_money_valuation": post_money_valuation
+                }
             }
             
         except HTTPException:
@@ -207,8 +246,12 @@ def add_startup(data: StartupRequest):
             data.startup_name,
             data.email_address,
             data.website_url,
-            data.valuation_ask,
-            data.industry
+            data.industry,
+            data.funding_amount_requested,
+            data.round_type,
+            data.equity_offered,
+            data.pre_money_valuation,
+            data.post_money_valuation
         )
         investorIntel_entity.map_startup_to_investors(
             data.startup_name,
@@ -326,12 +369,12 @@ class ChatRequest(BaseModel):
     
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    """Process a chat query and return an AI response."""
+    """Process a chat query and return an AI response with results from both startup and report data."""
     # Validate the query
     query = request.query.strip()
     if not query:
         return {
-            "response": "Please enter a question about startups in our database.",
+            "response": "Please enter a question about startups or industry trends.",
             "query": query,
             "results_count": 0
         }
@@ -345,10 +388,10 @@ async def chat(request: ChatRequest):
         }
     
     try:
-        # Search for relevant startups
+        # Search for relevant information across both startup data and Deloitte reports
         results = embedding_manager.search_similar_startups(
             query=query,
-            top_k=5  # Get the top 5 most relevant results
+            top_k=8  # Increased to get more combined results
         )
         
         # Check if we have any results
@@ -359,19 +402,27 @@ async def chat(request: ChatRequest):
                 "results_count": 0
             }
         
+        # Count the results by source
+        startup_count = sum(1 for r in results if r.get("source") == "startup")
+        report_count = sum(1 for r in results if r.get("source") == "deloitte-report")
+        
         # Process with Gemini
         ai_response = gemini_assistant.process_query_with_results(
             query=query,
             search_results=results
         )
         
-        
         return {
             "response": ai_response,
             "query": query,
-            "results_count": len(results)
+            "results_count": len(results),
+            "startup_count": startup_count,
+            "report_count": report_count,
+            "sources": ["startup", "deloitte-report"] if startup_count > 0 and report_count > 0 else 
+                      ["startup"] if startup_count > 0 else ["deloitte-report"]
         }
     except Exception as e:
+        print(f"Chat error: {str(e)}", exc_info=True)
         # Return a user-friendly error message
         return {
             "response": "I'm having trouble processing your request right now. Please try again with a different question.",
@@ -400,3 +451,144 @@ def get_startup_column(req: ColumnRequest):
     except Exception as e:
         # unexpected errors
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/update-startup-status")
+def update_startup_status(req: UpdateStatusRequest):
+    """Update the status of a startup for a particular investor"""
+    try:
+        # Map the frontend status to the database status
+        status_map = {
+            "Not Viewed": "New",
+            "Decision Pending": "Reviewed",
+            "Funded": "Funded",
+            "Rejected": "Rejected"
+        }
+        
+        # Validate status
+        if req.status not in status_map:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        
+        db_status = status_map[req.status]
+        
+        # Update the status in the database
+        db_utils.update_startup_status(
+            req.investor_id, 
+            req.startup_id, 
+            db_status
+        )
+        
+        return {"status": "success", "message": f"Status updated to {db_status}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/get-industry-competitors")
+def get_industry_competitors(req: CompetitorAnalysisRequest):
+    """
+    Fetch top competitors from the same industry based on revenue and growth.
+    """
+    try:
+        print("Industry requested:", req.industry)
+        
+        # Get a fresh connection since the global one might be closed
+        local_conn, local_cursor = get_connection()
+        
+        # Query to fetch top companies by revenue and growth percentage
+        query = """
+        WITH RankedCompanies AS (
+            SELECT 
+                Company,
+                Industry,
+                Emp_Growth_Percent,
+                Revenue,
+                Short_Description,
+                Employees,
+                City,
+                Country,
+                Homepage_URL,
+                LinkedIn_URL,
+                ROW_NUMBER() OVER (PARTITION BY Company ORDER BY Revenue DESC, Emp_Growth_Percent DESC) AS rn
+            FROM INVESTOR_INTEL_DB.GROWJO_SCHEMA.COMPANY_MERGED_VIEW
+            WHERE Industry = %s
+        )
+        SELECT 
+            Company,
+            Industry,
+            Emp_Growth_Percent,
+            Revenue,
+            Short_Description,
+            Employees,
+            City,
+            Country,
+            Homepage_URL,
+            LinkedIn_URL
+        FROM RankedCompanies
+        WHERE rn = 1
+        ORDER BY Revenue DESC, Emp_Growth_Percent DESC
+        LIMIT %s
+        """
+        
+        # Use the local connection we just created
+        local_cursor.execute(query, (req.industry, req.limit))
+        result = local_cursor.fetchall()
+        
+        # Get column names
+        columns = [col[0] for col in local_cursor.description]
+        
+        # Create list of dictionaries
+        competitors = [dict(zip(columns, row)) for row in result]
+        
+        # Process the revenue values to be more readable
+        for competitor in competitors:
+            # Convert revenue to float if possible
+            try:
+                if competitor.get('REVENUE'):
+                    revenue_value = float(competitor['REVENUE'])
+                    # Format as currency with commas
+                    competitor['REVENUE_FORMATTED'] = f"${revenue_value:,.2f}"
+            except (ValueError, TypeError):
+                competitor['REVENUE_FORMATTED'] = competitor.get('REVENUE', 'N/A')
+                
+            # Format growth percentage
+            try:
+                if competitor.get('EMP_GROWTH_PERCENT'):
+                    growth = float(competitor['EMP_GROWTH_PERCENT'])
+                    competitor['GROWTH_FORMATTED'] = f"{growth:.1f}%"
+            except (ValueError, TypeError):
+                competitor['GROWTH_FORMATTED'] = competitor.get('EMP_GROWTH_PERCENT', 'N/A')
+                
+            # Format employee count with commas
+            try:
+                if competitor.get('EMPLOYEES'):
+                    emp_count = int(competitor['EMPLOYEES'])
+                    competitor['EMPLOYEES_FORMATTED'] = f"{emp_count:,}"
+            except (ValueError, TypeError):
+                competitor['EMPLOYEES_FORMATTED'] = competitor.get('EMPLOYEES', 'N/A')
+        
+        # Count companies by city for visualization
+        city_counts = {}
+        for comp in competitors:
+            city = comp.get('CITY')
+            if city:
+                city_counts[city] = city_counts.get(city, 0) + 1
+        
+        # Close the local cursor and connection
+        local_cursor.close()
+        local_conn.close()
+        
+        # Return the processed data
+        return {
+            "status": "success",
+            "competitors": competitors,
+            "city_distribution": city_counts
+        }
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error fetching competitors: {str(e)}")
+
+# Add a shutdown event to close connection when app terminates
+@app.on_event("shutdown")
+def shutdown_event():
+    if cursor:
+        cursor.close()
+    if conn:
+        conn.close()

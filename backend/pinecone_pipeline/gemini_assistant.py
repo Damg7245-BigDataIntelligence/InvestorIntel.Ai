@@ -28,129 +28,103 @@ class GeminiAssistant:
         self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
         
         # Minimum relevance threshold
-        self.min_relevance_threshold = 0.3
+        self.min_relevance_threshold = 0.2
         
         # Configure the Gemini API
         try:
             genai.configure(api_key=self.GEMINI_API_KEY)
+            self.model = genai.GenerativeModel(self.model_name)
             print(f"Gemini API configured successfully with model: {self.model_name}")
         except Exception as e:
             print(f"Failed to configure Gemini API: {str(e)}")
             print(traceback.format_exc())
             raise Exception(f"Failed to configure Gemini API: {str(e)}")
     
-    def process_query_with_results(self, query: str, search_results: List[Dict[str, Any]]) -> str:
+    def process_query_with_results(self, query: str, search_results: list):
         """
-        Process a user query along with Pinecone search results to generate insights.
+        Process a query with search results from multiple sources and generate a response using Gemini.
         
         Args:
-            query: The user's search query
-            search_results: List of search results from Pinecone
-            
+            query: The query string
+            search_results: List of search results from both startup data and report data
+        
         Returns:
-            str: Gemini's response based on the query and search results
+            Generated response from Gemini
         """
-        print("\n" + "="*50)
-        print(f"PROCESSING QUERY: '{query}'")
-        print(f"TOTAL RESULTS FROM PINECONE: {len(search_results)}")
+        # Format the context based on the result sources
+        formatted_context = []
         
-        # If no results, return early
-        if not search_results:
-            print("NO RESULTS FOUND. NOT QUERYING GEMINI.")
-            return "I don't have any information about that in my database. Please try asking a different question."
+        # Count sources to inform the model what kind of data we're presenting
+        startup_count = sum(1 for r in search_results if r.get("source") == "startup")
+        report_count = sum(1 for r in search_results if r.get("source") == "deloitte-report")
         
-        # Take top 5 results (or fewer if not enough results)
-        top_results = search_results[:min(5, len(search_results))]
-        
-        # Check if the results are actually relevant
-        max_score = max([result.get("score", 0) for result in top_results]) if top_results else 0
-        
-        print(f"HIGHEST RELEVANCE SCORE: {max_score:.4f}")
-        
-        # If the highest score is below our threshold, don't query Gemini
-        if max_score < self.min_relevance_threshold:
-            print(f"ALL SCORES BELOW THRESHOLD ({self.min_relevance_threshold}). NOT QUERYING GEMINI.")
-            return "I don't have specific information related to that query in my database. Please try asking about a different topic."
-        
-        # Print debug information (only for console, not sent to Gemini)
-        print("\nRESULTS BEING SENT TO GEMINI:")
-        total_chars = 0
-        for i, result in enumerate(top_results, 1):
-            startup = result.get("startup_name", "Unknown")
-            score = result.get("score", 0)
-            industry = result.get("industry", "Unknown")
-            text_length = len(result.get("text", ""))
-            total_chars += text_length
-            
-            print(f"{i}. {startup} (Score: {score:.4f}, Industry: {industry}, Text length: {text_length} chars)")
-            
-            # Print a short preview of the text
-            text_preview = result.get("text", "")[:100] + "..." if len(result.get("text", "")) > 100 else result.get("text", "")
-            print(f"   Preview: {text_preview}")
-        
-        print(f"\nTOTAL DATA BEING SENT TO GEMINI: {total_chars} characters from {len(top_results)} results")
-        print("="*50 + "\n")
-        
-        try:
-            # Format the search results into a context string
-            context = self._format_search_results(top_results)
-            
-            prompt = f"""You are an investment analyst assistant. Your task is to provide accurate insights about startups based ONLY on the information provided in the search results below.
-
-QUERY: {query}
-
-SEARCH RESULTS:
-{context}
-
-Guidelines:
-1. ONLY use information directly present in the search results to answer the query
-2. If the search results don't contain information relevant to the query, clearly state what you don't know
-3. Format your response as follows:
-   - Use simple text with no special formatting
-   - For any list items, use a bullet point format with each bullet on its own line
-   - Each bullet should start with "• " and have a space after it
-   - Make sure all bullet points are properly separated on their own lines
-4. Do NOT include any of these phrases in your response:
-   - "Based on the search results..."
-   - "According to the provided information..."
-   - "Result #X states..."
-   - ", here's what I know about..."
-5. Just provide the direct information without mentioning that it comes from search results
-6. Be concise and to the point
-
-YOUR RESPONSE:"""
-            
-            model = genai.GenerativeModel(self.model_name)
-            
-            # Set generation config for better output
-            generation_config = {
-                "temperature": 0.2,  # Lower temperature for more factual responses
-                "top_p": 0.95,
-                "top_k": 40,
-                "max_output_tokens": 1024
-            }
-            
-            response = model.generate_content(
-                prompt,
-                generation_config=generation_config
+        # Add a context header to help the model understand the data
+        if startup_count > 0 and report_count > 0:
+            formatted_context.append(
+                f"The following information comes from both startup data ({startup_count} results) and " +
+                f"Deloitte industry reports ({report_count} results):"
             )
+        elif startup_count > 0:
+            formatted_context.append(f"The following information comes from startup data ({startup_count} results):")
+        elif report_count > 0:
+            formatted_context.append(f"The following information comes from Deloitte industry reports ({report_count} results):")
+        
+        # Process and format each result
+        for i, result in enumerate(search_results):
+            if result.get("source") == "startup":
+                # Format startup data
+                formatted_context.append(
+                    f"Result #{i+1} (Startup): {result.get('startup_name', 'Unnamed Startup')}\n" +
+                    f"Industry: {result.get('industry', 'Unknown')}\n" +
+                    f"Content: {result.get('text', 'No information available')}\n"
+                )
+            elif result.get("source") == "deloitte-report":
+                # Format Deloitte report data
+                formatted_context.append(
+                    f"Result #{i+1} (Industry Report): {result.get('report_title', 'Untitled Report')}\n" +
+                    f"Industry: {result.get('industry', 'Unknown')}\n" +
+                    f"Year: {result.get('year', 'Unknown')}\n" +
+                    f"Content: {result.get('text', 'No information available')}\n"
+                )
+        
+        # Join all context pieces with separators
+        context_text = "\n\n".join(formatted_context)
+        
+        # Prepare system prompt
+        system_prompt = """
+        You are an AI assistant for venture capitalists and investors. 
+        When answering questions, use the provided search results to inform your responses.
+        Provide factual, accurate information based directly on the search results.
+        If the information comes from multiple sources, synthesize it coherently.
+        
+        Guidelines:
+        - Cite specific sources when providing information (e.g., "According to Result #3...")
+        - If a question can't be answered with the provided results, say so clearly
+        - Be concise and focus on investment-relevant points
+        - For startups, highlight business model, market potential, and competitive advantages
+        - For industry reports, focus on market trends, growth forecasts, and key insights
+        """
+        
+        # Generate content with Gemini
+        try:
+            # Combine system prompt with user query since Gemini doesn't support system messages
+            combined_prompt = f"""
+            {system_prompt}
             
-            # Check response
-            if not response or not hasattr(response, 'text'):
-                print("Received empty response from Gemini API")
-                return "I'm having trouble processing your request. Please try again with a different question."
+            Based on the following search results, please answer this question: {query}
             
-            print(f"Generated response of length: {len(response.text)}")
+            {context_text}
+            """
             
-            # Clean up the response format
-            clean_response = self._clean_response_format(response.text)
-            return clean_response
-            
+            response = self.model.generate_content(
+                [
+                    {"role": "user", "parts": [combined_prompt]}
+                ]
+            )
+            return response.text
         except Exception as e:
-            error_msg = f"Error processing query with Gemini: {str(e)}"
-            print(error_msg)
-            print(traceback.format_exc())
-            return "I'm having trouble processing your request right now. Please try again later or ask a different question."
+            print(f"Error generating Gemini response: {e}")
+            return "I'm unable to process this request at the moment. Please try again with a different question."
     
     def _format_search_results(self, search_results: List[Dict[str, Any]]) -> str:
         """

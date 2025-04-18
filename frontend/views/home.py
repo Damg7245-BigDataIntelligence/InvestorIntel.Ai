@@ -71,11 +71,14 @@ def render():
             Upload your startup details and pitch deck. Our AI system will match your venture with relevant investors based on industry, growth metrics, and more.
             """)
 
-            # Initialize once
+            # Initialize once - add new funding fields
             for key, default in {
                 "startup_name": "",
                 "email_address": "",
-                "valuation_ask": 0.0,
+                "funding_amount_requested": 0.0,
+                "round_type": "Seed",
+                "equity_offered": 0.0,
+                "pre_money_valuation": 0.0,
                 "industry": "",
                 "website_url": "",
                 "investors": [],
@@ -93,16 +96,9 @@ def render():
                 st.warning("Please enter a valid email address")
             st.session_state.email_address = email
             
-            st.session_state.valuation_ask = st.number_input("Valuation Ask (USD)", min_value=0.0, format="%.2f", value=st.session_state.valuation_ask)
-            
             # Industry dropdown
             industries = ["AI", "Healthcare", "Tech Services", "Automotive", "Defense", "Entertainment", "Renewable Energy", "Fintech", "E-commerce", "Education"]
             st.session_state.industry = st.selectbox("Industry", options=industries, index=0 if not st.session_state.industry else industries.index(st.session_state.industry) if st.session_state.industry in industries else 0)
-
-            if not st.session_state.pitch_deck_uploaded:
-                uploaded_file = st.file_uploader("Upload Pitch Deck", type=["pdf"])
-                if uploaded_file:
-                    st.session_state.pitch_deck_file = uploaded_file
 
             # Website URL validation
             website_url = st.text_input("Website URL", value=st.session_state.website_url)
@@ -110,6 +106,69 @@ def render():
                 st.warning("Website URL should start with http:// or https://")
             st.session_state.website_url = website_url
 
+            # New funding fields section
+            st.markdown("### 💰 Funding Details")
+            
+            # Funding Amount Requested
+            st.session_state.funding_amount_requested = st.number_input(
+                "Funding Amount Requested (USD)", 
+                min_value=0.0, 
+                format="%.2f", 
+                value=st.session_state.funding_amount_requested
+            )
+            
+            # Round Type dropdown
+            round_types = ["Seed", "Series A", "Series B", "Series C", "Convertible Note", "SAFE"]
+            st.session_state.round_type = st.selectbox(
+                "Round Type", 
+                options=round_types, 
+                index=round_types.index(st.session_state.round_type) if st.session_state.round_type in round_types else 0
+            )
+            
+            # Equity Offered percentage with validation
+            equity_offered = st.number_input(
+                "Equity Offered (%)", 
+                min_value=0.0, 
+                max_value=100.0,
+                format="%.2f", 
+                value=st.session_state.equity_offered
+            )
+            
+            # Validate equity percentage doesn't exceed 100%
+            if equity_offered > 100.0:
+                st.error("Equity offered cannot exceed 100%")
+                st.session_state.equity_offered = 100.0  # Cap at 100%
+            else:
+                st.session_state.equity_offered = equity_offered
+            
+            # Pre-money Valuation with validation
+            pre_money_valuation = st.number_input(
+                "Valuation (Pre-money) (USD)", 
+                min_value=0.0, 
+                format="%.2f", 
+                value=st.session_state.pre_money_valuation
+            )
+
+            # Validate pre-money valuation against funding amount
+            if pre_money_valuation < st.session_state.funding_amount_requested and st.session_state.funding_amount_requested > 0:
+                st.error("Pre-money valuation should be greater than the funding amount requested")
+                # Don't update the state to prevent submission with invalid values
+            else:
+                st.session_state.pre_money_valuation = pre_money_valuation
+
+            # Calculate Post-money Valuation automatically
+            post_money_valuation = st.session_state.pre_money_valuation + st.session_state.funding_amount_requested
+            st.markdown(f"**Post-money Valuation:** ${post_money_valuation:,.2f} USD")
+
+            # Pitch deck uploader
+            st.markdown("### 📄 Pitch Deck")
+            if not st.session_state.pitch_deck_uploaded:
+                uploaded_file = st.file_uploader("Upload Pitch Deck", type=["pdf"])
+                if uploaded_file:
+                    st.session_state.pitch_deck_file = uploaded_file
+
+            # Investor selection
+            st.markdown("### 👥 Potential Investors")
             # Cache investor options to prevent repeated API calls
             if "cached_investor_options" not in st.session_state:
                 resp = requests.get(f"{FAST_API_URL}/fetch-investor-usernames")
@@ -142,7 +201,6 @@ def render():
             st.session_state.investors = selected_labels
 
             selected_usernames = [label.split(" (")[0] for label in selected_labels]
-
 
             # add a default for number of founders and their lists
             for key, default in {
@@ -206,14 +264,15 @@ def render():
             # Handle submit
             if st.button("Submit"):
                 missing = []
+                validation_errors = []
 
                 # core startup fields
                 if not st.session_state.startup_name:
                     missing.append("Startup Name")
                 if not st.session_state.email_address:
                     missing.append("Contact Email")
-                if not st.session_state.valuation_ask:
-                    missing.append("Valuation Ask")
+                if not st.session_state.funding_amount_requested:
+                    missing.append("Funding Amount Requested")
                 if not st.session_state.industry:
                     missing.append("Industry")
                 if not st.session_state.pitch_deck_file:
@@ -221,24 +280,40 @@ def render():
                 if not st.session_state.website_url:
                     missing.append("Website URL")
 
-                # investor selection (optional—uncomment if you require ≥1)
-                # if not selected_usernames:
-                #     missing.append("Potential Investors")
+                # Validate equity percentage
+                if st.session_state.equity_offered > 100.0:
+                    validation_errors.append("Equity offered cannot exceed 100%")
+                
+                # Validate pre-money valuation
+                if st.session_state.pre_money_valuation < st.session_state.funding_amount_requested:
+                    validation_errors.append("Pre-money valuation must be greater than funding amount requested")
 
-                # dynamic founders
-                for idx, name in enumerate(st.session_state.founder_names, start=1):
-                    if not name.strip():
-                        missing.append(f"Founder #{idx} Name")
-                for idx, url in enumerate(st.session_state.founder_linkedin_urls, start=1):
-                    if not url.strip():
-                        missing.append(f"Founder #{idx} LinkedIn URL")
-
-                if missing:
-                    st.error("⚠️ The following required fields are missing:")
-                    for field in missing:
-                        st.markdown(f"- ❌ **{field}**")
+                # Proceed only if there are no validation errors
+                if missing or validation_errors:
+                    if missing:
+                        st.error("⚠️ The following required fields are missing:")
+                        for field in missing:
+                            st.markdown(f"- ❌ **{field}**")
+                    
+                    if validation_errors:
+                        st.error("⚠️ Please fix the following validation errors:")
+                        for error in validation_errors:
+                            st.markdown(f"- ❌ **{error}**")
                 else:
                     try:
+                        # First, check if startup already exists
+                        check_response = requests.post(
+                            f"{FAST_API_URL}/check-startup-exists",
+                            json={"startup_name": st.session_state.startup_name}
+                        )
+                        
+                        check_result = check_response.json()
+                        
+                        if check_result.get("exists"):
+                            st.error(f"⚠️ {check_result.get('message')}. Please use a different name or contact support if this is your startup.")
+                            return
+                        
+                        # Continue with submission if startup doesn't exist
                         founder_list = [
                             {
                                 "startup_name": st.session_state.startup_name,
@@ -250,66 +325,88 @@ def render():
                                 st.session_state.founder_linkedin_urls
                             )
                         ]
-                        # Save the startup info
-                        requests.post(
+                        
+                        # Save the startup info - with new funding fields
+                        startup_response = requests.post(
                             f"{FAST_API_URL}/add-startup-info",
                             json={
                                 "startup_name": st.session_state.startup_name,
                                 "email_address": st.session_state.email_address,
                                 "website_url": st.session_state.website_url,
-                                "valuation_ask": st.session_state.valuation_ask,
                                 "industry": st.session_state.industry,
+                                "funding_amount_requested": st.session_state.funding_amount_requested,
+                                "round_type": st.session_state.round_type,
+                                "equity_offered": st.session_state.equity_offered,
+                                "pre_money_valuation": st.session_state.pre_money_valuation,
+                                "post_money_valuation": post_money_valuation,
                                 "investor_usernames": selected_usernames,
                                 "founder_list": founder_list
                             }
                         )
                         
-                        # Also process the pitch deck file
-                        if st.session_state.pitch_deck_file:
-                            # Prepare founder LinkedIn URLs
-                            linkedin_urls_json = json.dumps(st.session_state.founder_linkedin_urls)
+                        # Show success message
+                        st.success("✅ Your startup information has been submitted successfully! Our team or investors will reach out to you if there's a fit.")
                             
-                            # Create form data for file upload
-                            files = {"file": st.session_state.pitch_deck_file}
-                            form_data = {
-                                "startup_name": st.session_state.startup_name,
-                                "industry": st.session_state.industry,
-                                "linkedin_urls": linkedin_urls_json,
-                                "website_url": st.session_state.website_url
-                            }
+                        # Show success message immediately after /add-startup-info response
+                        if startup_response.ok:
+                            # Process the pitch deck file directly (no threading)
+                            if st.session_state.pitch_deck_file:
+                                try:
+                                    # Prepare founder LinkedIn URLs
+                                    linkedin_urls_json = json.dumps(st.session_state.founder_linkedin_urls)
+                                    
+                                    # Create form data for file upload with all funding-related information
+                                    files = {"file": st.session_state.pitch_deck_file}
+                                    form_data = {
+                                        "startup_name": st.session_state.startup_name,
+                                        "industry": st.session_state.industry,
+                                        "linkedin_urls": linkedin_urls_json,
+                                        "website_url": st.session_state.website_url,
+                                        # Add funding-related information
+                                        "funding_amount": str(st.session_state.funding_amount_requested),
+                                        "round_type": st.session_state.round_type,
+                                        "equity_offered": str(st.session_state.equity_offered),
+                                        "pre_money_valuation": str(st.session_state.pre_money_valuation),
+                                        "post_money_valuation": str(post_money_valuation)
+                                    }
+                                    
+                                    # Direct API call
+                                    pitch_response = requests.post(
+                                        f"{FAST_API_URL}/process-pitch-deck",
+                                        files=files,
+                                        data=form_data
+                                    )
+                                    
+                                    if pitch_response.status_code == 200:
+                                        print(f"Pitch deck processed successfully for {st.session_state.startup_name}")
+                                    else:
+                                        print(f"Error processing pitch deck: {pitch_response.status_code} - {pitch_response.text}")
+                                    
+                                except Exception as e:
+                                    print(f"Error processing pitch deck: {e}")
                             
-                            # Submit pitch deck for processing
-                            process_resp = requests.post(
-                                f"{FAST_API_URL}/process-pitch-deck",
-                                files=files,
-                                data=form_data
-                            )
                             
-                            if not process_resp.ok:
-                                st.warning("Pitch deck submitted but analysis encountered an issue.")
-                        
-                        st.session_state.pitch_deck_uploaded = True
-                        st.success("✅ Your pitch deck has been submitted successfully! Our team or investors will reach out to you if there's a fit. 🚀")
-
-                        # Clear fields
-                        # strings → ""
-                        for key in ["startup_name","email_address","website_url","industry"]:
-                            st.session_state[key] = ""
-                        # floats → 0.0
-                        st.session_state.valuation_ask = 0.0
-                        # lists → empty or initial
-                        st.session_state.investors             = []
-                        st.session_state.founders_count        = 1
-                        st.session_state.founder_names         = [""]
-                        st.session_state.founder_linkedin_urls = [""]
-                        # pitch deck flags
-                        st.session_state.pitch_deck_file     = None
-                        st.session_state.pitch_deck_uploaded = False
-
+                            # Clear fields
+                            # strings → ""
+                            for key in ["startup_name", "email_address", "website_url", "industry", "round_type"]:
+                                st.session_state[key] = ""
+                            # floats → 0.0
+                            for key in ["funding_amount_requested", "equity_offered", "pre_money_valuation"]:
+                                st.session_state[key] = 0.0
+                            # lists → empty or initial
+                            st.session_state.investors = []
+                            st.session_state.founders_count = 1
+                            st.session_state.founder_names = [""]
+                            st.session_state.founder_linkedin_urls = [""]
+                            # pitch deck flags
+                            st.session_state.pitch_deck_file = None
+                            st.session_state.pitch_deck_uploaded = False
+                        else:
+                            st.error(f"❌ Error saving startup information: {startup_response.status_code} - {startup_response.text}")
+                            return
 
                     except Exception as e:
                         st.error(f"❌ Error during submission: {e}")
-
 
         # -------- INVESTOR SECTION --------
         elif st.session_state.user_type == "Investor":

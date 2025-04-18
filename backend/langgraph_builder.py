@@ -19,7 +19,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Initialize embedding manager
-embedding_manager = None
 try:
     embedding_manager = EmbeddingManager()
 except Exception as e:
@@ -103,11 +102,22 @@ def get_industry_report(industry_name: str):
 
 def get_top_companies(industry_name: str):
     query = """
-    SELECT Company, Industry, Emp_Growth_Percent, Revenue, Short_Description 
+    WITH RankedCompanies AS (
+    SELECT 
+        Company,
+        Industry,
+        Emp_Growth_Percent,
+        Revenue,
+        Short_Description,
+        ROW_NUMBER() OVER (PARTITION BY Company ORDER BY Revenue DESC, Emp_Growth_Percent DESC) AS rn
     FROM INVESTOR_INTEL_DB.GROWJO_SCHEMA.COMPANY_MERGED_VIEW
     WHERE Industry = %s
+    )
+    SELECT Company, Industry, Emp_Growth_Percent, Revenue, Short_Description
+    FROM RankedCompanies
+    WHERE rn = 1
     ORDER BY Revenue DESC, Emp_Growth_Percent DESC
-    LIMIT 10
+    LIMIT 10;
     """
     result = snowflake_query(query, (industry_name,))
     return result
@@ -135,11 +145,7 @@ def store_analysis_report(startup_name: str, report_text: str):
 # -------------------------
 def process_pitch_deck(state):
     """Process a pitch deck PDF and generate a summary"""
-    print("Processing pitch deck state:", state)
     # Debug printing to help diagnose the issue
-    print(f"State keys: {list(state.keys())}")
-    print(f"PDF file path in state: {state.get('pdf_file_path')}")
-    
     if not state.get("pdf_file_path"):
         print("No PDF file path provided")
         state["error"] = "No PDF file path provided"
@@ -182,7 +188,7 @@ def process_pitch_deck(state):
         investor_summary = summarize_pitch_deck_with_gemini(
             file_path=file_path,
             api_key=GEMINI_API_KEY,
-            model_name="gemini-2.0-flash"
+            model_name="gemini-1.5-flash"
         )
         
         print(f"Summary generation complete: {investor_summary is not None}")
@@ -230,11 +236,43 @@ def process_pitch_deck(state):
 def fetch_summary(state):
     # If we already have a summary from PDF processing, skip fetching
     if state.get("summary") and isinstance(state["summary"], dict):
+        # Store the summary in Snowflake
         return state
         
     summary_data = get_startup_summary(state["startup_name"])
     state["summary"] = summary_data
+    
     return state
+
+# def store_summary_report(startup_name: str, summary_text: str):
+#     """Store the summary in the Snowflake table"""
+#     if not startup_name or not summary_text:
+#         print("Missing startup name or summary text, skipping storage")
+#         return {"status": "failed", "message": "Missing startup name or summary text"}
+        
+#     query = """
+#     UPDATE INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
+#     SET summary_report = %s
+#     WHERE startup_name = %s
+#     """
+#     try:
+#         conn = snowflake.connector.connect(
+#             user=SNOWFLAKE_USER,
+#             password=SNOWFLAKE_PASSWORD,
+#             account=SNOWFLAKE_ACCOUNT,
+#             warehouse=SNOWFLAKE_WAREHOUSE,
+#             database="INVESTOR_INTEL_DB"
+#         )
+#         cursor = conn.cursor()
+#         cursor.execute(query, (summary_text, startup_name))
+#         conn.commit()
+#         cursor.close()
+#         conn.close()
+#         print(f"Successfully stored summary for {startup_name}")
+#         return {"status": "success", "message": f"Summary stored for {startup_name}"}
+#     except Exception as e:
+#         print(f"Error storing summary in Snowflake: {e}")
+#         return {"status": "failed", "message": f"Error: {str(e)}"}
 
 def fetch_industry_report(state):
     if not state.get("summary") or not isinstance(state["summary"], dict):
@@ -257,6 +295,9 @@ def fetch_competitors(state):
         return state
     
     industry = state["summary"].get("INDUSTRY")
+    if industry == "Renewable Energy":
+        industry = "Renewable Ener..."
+        
     startup_name = state["summary"].get("STARTUP_NAME")
     if not industry or not startup_name:
         state["competitors"] = []
@@ -285,7 +326,7 @@ def generate_report(state):
     # Extract key information for logging
     startup_name = state["summary"].get("STARTUP_NAME", "Unknown")
     industry = state["summary"].get("INDUSTRY", "Unknown")
-    model_name = "gemini-2.0-flash"
+    model_name = "gemini-1.5-flash"
     
     # Start timing for response time measurement
     start_time = datetime.datetime.now()
@@ -485,6 +526,46 @@ def store_visualizations_in_snowflake(startup_name: str, visualization_data: dic
         print(f"Error storing visualizations in Snowflake: {e}")
         return False
 
+def store_pitch_deck_link(startup_name: str, pitch_deck_link: str, filename: str = None):
+    """Store the pitch deck link and filename in the Snowflake table"""
+    if not startup_name or not pitch_deck_link:
+        print("Missing startup name or pitch deck link, skipping storage")
+        return {"status": "failed", "message": "Missing startup name or pitch deck link"}
+        
+    if filename:
+        query = """
+        UPDATE INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
+        SET pitch_deck_link = %s, pitch_deck_filename = %s
+        WHERE startup_name = %s
+        """
+        params = (pitch_deck_link, filename, startup_name)
+    else:
+        query = """
+        UPDATE INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
+        SET pitch_deck_link = %s
+        WHERE startup_name = %s
+        """
+        params = (pitch_deck_link, startup_name)
+        
+    try:
+        conn = snowflake.connector.connect(
+            user=SNOWFLAKE_USER,
+            password=SNOWFLAKE_PASSWORD,
+            account=SNOWFLAKE_ACCOUNT,
+            warehouse=SNOWFLAKE_WAREHOUSE,
+            database="INVESTOR_INTEL_DB"
+        )
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print(f"Successfully stored pitch deck link for {startup_name}")
+        return {"status": "success", "message": f"Pitch deck link stored for {startup_name}"}
+    except Exception as e:
+        print(f"Error storing pitch deck link in Snowflake: {e}")
+        return {"status": "failed", "message": f"Error: {str(e)}"}
+
 # -------------------------
 # Graph Compiler
 # -------------------------
@@ -499,7 +580,7 @@ def build_analysis_graph():
     builder.add_node("fetch_competitors", fetch_competitors)
     builder.add_node("generate_report", generate_report)
     builder.add_node("store_report", store_report)
-    # builder.add_node("fetch_news", fetch_news)  # New node for fetching news
+    builder.add_node("fetch_news", fetch_news)  # New node for fetching news
 
     # Set conditional starting point
     builder.set_conditional_entry_point(
@@ -512,7 +593,7 @@ def build_analysis_graph():
     builder.add_edge("fetch_industry_report", "fetch_competitors")
     builder.add_edge("fetch_competitors", "generate_report")
     builder.add_edge("generate_report", "store_report")
-    builder.add_edge("store_report", END)  # Add edge to fetch news
-    # builder.add_edge("fetch_news", END)  # End after fetching news
+    builder.add_edge("store_report", "fetch_news")  # Add edge to fetch news
+    builder.add_edge("fetch_news", END)  # End after fetching news
 
     return builder.compile()

@@ -140,7 +140,7 @@ class EmbeddingManager:
         snowflake_success = False
         if self.snowflake_manager:
             try:
-                startup_id = self.snowflake_manager.store_startup_summary(
+                startup_name = self.snowflake_manager.store_startup_summary(
                     startup_name=startup_name,
                     summary=summary,
                     industry=industry,
@@ -148,7 +148,7 @@ class EmbeddingManager:
                     s3_location=s3_location,
                     original_filename=original_filename
                 )
-                print(f"Stored summary in Snowflake with ID: {startup_id}")
+                print(f"Stored summary in Snowflake for: {startup_name}")
                 snowflake_success = True
             except Exception as e:
                 print(f"Failed to store in Snowflake: {e}")
@@ -197,17 +197,18 @@ class EmbeddingManager:
     
     def search_similar_startups(self, query: str, industry: str = None, top_k: int = 5):
         """
-        Search for similar startups based on a query and optional filters.
+        Search for similar content based on a query and optional filters.
+        Searches both the investor-intel (startups) and deloitte-reports indexes simultaneously.
         
         Args:
             query: The search query text
             industry: Filter by industry category (optional)
-            top_k: Number of results to return
+            top_k: Number of results to return from each index
             
         Returns:
-            List of dictionary results with startup information
+            List of dictionary results with combined information from both indexes
         """
-        print(f"Searching for startups with query: '{query}'")
+        print(f"Searching for information with query: '{query}'")
         print(f"Filters - Industry: {industry}, Top K: {top_k}")
         
         try:
@@ -219,39 +220,90 @@ class EmbeddingManager:
             if industry:
                 filter_dict["industry"] = {"$eq": industry}
             
-            # Log the filter being used
-            results = self.index.query(
-                vector=query_embedding,
-                top_k=top_k,
-                include_metadata=True,
-                filter=filter_dict if filter_dict else None
-            )
-            
-            # Process and return results
-            matches = results.get("matches", [])
-            
+            # Initialize combined results list
             processed_results = []
-            for i, match in enumerate(matches):
-                metadata = match["metadata"]
-                score = match["score"]
+            
+            # SEARCH 1: Search in the investor-intel index (startup information)
+            try:
+                startup_results = self.index.query(
+                    vector=query_embedding,
+                    top_k=top_k,
+                    include_metadata=True,
+                    filter=filter_dict if filter_dict else None
+                )
                 
-                # Create and add result entry
-                result = {
-                    "id": match["id"],
-                    "startup_name": metadata.get("startup_name"),
-                    "industry": metadata.get("industry"),
-                    "s3_location": metadata.get("s3_location"),
-                    "score": score,
-                    "linkedin_urls": metadata.get("linkedin_urls", ""),
-                    "original_filename": metadata.get("original_filename", ""),
-                    "upload_timestamp": metadata.get("upload_timestamp", ""),
-                    "text": metadata.get("text", "No content available"),
-                    "snowflake_status": metadata.get("snowflake_status", "unknown")
-                }
-                processed_results.append(result)
+                # Process startup results
+                startup_matches = startup_results.get("matches", [])
+                for match in startup_matches:
+                    metadata = match["metadata"]
+                    score = match["score"]
+                    
+                    # Create and add result entry
+                    result = {
+                        "id": match["id"],
+                        "source": "startup",  # Mark the source as startup
+                        "startup_name": metadata.get("startup_name"),
+                        "industry": metadata.get("industry"),
+                        "s3_location": metadata.get("s3_location"),
+                        "score": score,
+                        "linkedin_urls": metadata.get("linkedin_urls", ""),
+                        "original_filename": metadata.get("original_filename", ""),
+                        "upload_timestamp": metadata.get("upload_timestamp", ""),
+                        "text": metadata.get("text", "No content available"),
+                        "snowflake_status": metadata.get("snowflake_status", "unknown")
+                    }
+                    processed_results.append(result)
+                
+                print(f"Found {len(startup_matches)} results in investor-intel index")
+                
+            except Exception as e:
+                print(f"Error searching startup index: {e}", exc_info=True)
+            
+            # SEARCH 2: Search in the deloitte-reports index (industry reports)
+            try:
+                # Connect to the deloitte-reports index
+                deloitte_index = self.pc.Index("deloitte-reports")
+                
+                # Search in the deloitte-reports index
+                deloitte_results = deloitte_index.query(
+                    vector=query_embedding,
+                    top_k=top_k,
+                    include_metadata=True,
+                    filter=filter_dict if filter_dict else None
+                )
+                
+                # Process deloitte report results
+                deloitte_matches = deloitte_results.get("matches", [])
+                for match in deloitte_matches:
+                    metadata = match["metadata"]
+                    score = match["score"]
+                    
+                    # Create a structured result entry
+                    result = {
+                        "id": match["id"],
+                        "source": "deloitte-report",  # Mark the source as deloitte report
+                        "report_title": metadata.get("title", "Untitled Report"),
+                        "industry": metadata.get("industry", "Unknown"),
+                        "score": score,
+                        "text": metadata.get("text", "No content available"),
+                        "year": metadata.get("year", "Unknown"),
+                        "url": metadata.get("url", "")
+                    }
+                    processed_results.append(result)
+                
+                print(f"Found {len(deloitte_matches)} results in deloitte-reports index")
+                
+            except Exception as e:
+                print(f"Error searching deloitte-reports index: {e}", exc_info=True)
+            
+            # Sort all results by score (descending) to get best matches first
+            processed_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+            
+            # Limit to top_k total results across both indexes
+            processed_results = processed_results[:top_k]
             
             return processed_results
         
         except Exception as e:
-            print(f"Error searching startups: {e}", exc_info=True)
+            print(f"Error in search_similar_startups: {e}", exc_info=True)
             return []

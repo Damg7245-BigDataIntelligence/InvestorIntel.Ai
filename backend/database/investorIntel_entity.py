@@ -101,31 +101,94 @@ def insert_investor(first_name, last_name, email_address, username):
         conn.rollback()
         print(f"❌ Failed to insert investor: {e}")
 
-def insert_startup(startup_name, email_address, website_url, valuation_ask, industry):
+def insert_startup(
+    startup_name,
+    email_address,
+    website_url,
+    industry,
+    funding_amount_requested,
+    round_type,
+    equity_offered,
+    pre_money_valuation,
+    post_money_valuation
+):
+    """Insert a new startup into the database with the expanded funding details."""
     conn, cur = account_login()
+    
     try:
-        insert_query = """
-            INSERT INTO startup_information.startup (
-                startup_name,
-                email_address,
-                website_url,
-                valuation_ask,
-                industry
+        # Check if startup exists
+        cur.execute(
+            "SELECT startup_id FROM startup_information.startup WHERE startup_name = %s",
+            (startup_name,)
+        )
+        existing = cur.fetchone()
+        
+        if existing:
+            # Update existing startup
+            cur.execute("""
+                UPDATE startup_information.startup
+                SET email_address = %s,
+                    website_url = %s,
+                    industry = %s,
+                    funding_amount_requested = %s,
+                    round_type = %s,
+                    equity_offered = %s,
+                    pre_money_valuation = %s,
+                    post_money_valuation = %s
+                WHERE startup_name = %s
+                """,
+                (
+                    email_address,
+                    website_url,
+                    industry,
+                    funding_amount_requested,
+                    round_type,
+                    equity_offered,
+                    pre_money_valuation,
+                    post_money_valuation,
+                    startup_name
+                )
             )
-            VALUES (%s, %s, %s, %s, %s);
-        """
-        cur.execute(insert_query, (
-            startup_name,
-            email_address,
-            website_url,
-            valuation_ask,
-            industry
-        ))
+        else:
+            # Insert new startup
+            cur.execute("""
+                INSERT INTO startup_information.startup (
+                    startup_name,
+                    email_address,
+                    website_url,
+                    industry,
+                    funding_amount_requested,
+                    round_type,
+                    equity_offered,
+                    pre_money_valuation,
+                    post_money_valuation
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    startup_name,
+                    email_address,
+                    website_url,
+                    industry,
+                    funding_amount_requested,
+                    round_type,
+                    equity_offered,
+                    pre_money_valuation,
+                    post_money_valuation
+                )
+            )
+        
         conn.commit()
-        print("✅ Startup inserted successfully.")
+        return True
+    
     except Exception as e:
         conn.rollback()
-        print(f"❌ Failed to insert startup: {e}")
+        print(f"Error inserting startup: {e}")
+        raise
+    
+    finally:
+        cur.close()
+        conn.close()
     
 def insert_startup_founder_map(founders_list):
     conn, cur = account_login()

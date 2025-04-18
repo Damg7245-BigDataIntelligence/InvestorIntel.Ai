@@ -76,7 +76,6 @@ class SnowflakeManager:
                             startup_name: str,
                             summary: str,
                             industry: str = None,
-                            analysis_report: str = None,
                             website_url: str = None,
                             s3_location: str = None,
                             original_filename: str = None) -> str:
@@ -98,33 +97,24 @@ class SnowflakeManager:
         
         try:
             # Generate a unique ID for the startup
-            startup_id = str(uuid.uuid4())
-            
             # Insert the summary into Snowflake
             cur.execute("""
-            INSERT INTO INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP (
-                STARTUP_ID,
-                STARTUP_NAME,
-                INDUSTRY,
-                SHORT_DESCRIPTION,
-                ANALYSIS_REPORT,
-                WEBSITE_URL,
-                S3_LOCATION,
-                ORIGINAL_FILENAME
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                startup_id,
-                startup_name,
-                industry or "Unknown",
+            UPDATE INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
+    SET 
+        SUMMARY_REPORT = %s,
+        PITCH_DECK_LINK = %s,
+        PITCH_DECK_FILENAME = %s
+        WHERE 
+            STARTUP_NAME = %s
+    """, (
                 summary,
-                analysis_report,
-                website_url,
                 s3_location,
-                original_filename
-            ))
+                original_filename,
+                startup_name
+        ))
             
             conn.commit()
-            return startup_id
+            return startup_name
             
         except Exception as e:
             raise e

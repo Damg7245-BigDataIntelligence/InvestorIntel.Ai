@@ -18,7 +18,7 @@ def check_startup_exists(startup_name: str) -> bool:
     """
     query = """
     SELECT startup_name
-    FROM INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY
+    FROM INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
     WHERE LOWER(startup_name) = LOWER(%s)
     LIMIT 1
     """
