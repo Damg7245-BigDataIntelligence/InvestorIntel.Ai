@@ -13,10 +13,6 @@ if PROJECT_ROOT not in sys.path:
 # ✅ Now do the imports
 from backend.database import db_utils
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
-
 def dashboard_header(first_name):
     # Set padding to 0 for top alignment
     st.markdown("""
@@ -94,52 +90,6 @@ def dashboard_sidebar(sidebar_col, investor_id):
 
             st.markdown("</div>", unsafe_allow_html=True)  # Close sidebar container
 
-def dashboard_main(main_col):
-    with main_col:
-        if not st.session_state.get("selected_startup_id"):
-            st.info("Select a startup from the left panel to view details.")
-            return
-
-        # Load startup data once
-        startup_data = db_utils.get_startup_info_by_id(st.session_state.selected_startup_id)
-
-        # Create Tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["📄 Summary", "📊 Competitor Analysis", "📈 Market Analysis", "📰 News Trends"])
-
-        # ---------- 🟢 Summary Tab ----------
-        with tab1:
-            st.markdown("## 🚀 Startup Details")
-            st.markdown(f"**Name:** {startup_data['STARTUP_NAME']}")
-            st.markdown(f"**Industry:** {startup_data['INDUSTRY']}")
-            st.markdown(f"**Founder:** {startup_data['FOUNDER_NAME']}")
-            st.markdown(f"**Email:** {startup_data['EMAIL_ADDRESS']}")
-            st.markdown(f"**Website:** [Visit]({startup_data['WEBSITE_URL']})")
-            st.markdown(f"**LinkedIn:** [Profile]({startup_data['LINKEDIN_URL']})")
-            st.markdown(f"**Valuation Ask:** ${startup_data['VALUATION_ASK']:,.2f}")
-            st.markdown(f"**Short Description:** {startup_data['SHORT_DESCRIPTION']}")
-
-            if startup_data["PITCH_DECK_LINK"]:
-                st.markdown(f"[📄 View Pitch Deck]({startup_data['PITCH_DECK_LINK']})")
-
-            if startup_data.get("ANALYTICS_REPORT"):
-                st.download_button("📊 Download Analytics Report", data=startup_data["ANALYTICS_REPORT"], file_name="analytics_report.txt")
-
-        # ---------- 🟡 Competitor Analysis Tab ----------
-        with tab2:
-            st.markdown("### 🧩 Competitor Analysis")
-            st.info("Competitor analysis content goes here...")
-
-        # ---------- 🔵 Market Analysis Tab ----------
-        with tab3:
-            st.markdown("### 🌐 Market Analysis")
-            st.info("Market trends, segmentation, and other analysis will be shown here...")
-
-        # ---------- 🔴 News Trends Tab ----------
-        with tab4:
-            st.markdown("### 🗞️ News Trends")
-            st.info("Latest news and trends related to this startup will be displayed here...")
-
-
 def render():
     if not st.session_state.get("is_logged_in"):
         st.warning("You must log in first.")
@@ -172,4 +122,23 @@ def render():
 
     dashboard_sidebar(sidebar_col, investor_id)
 
-    dashboard_main(main_col)
+    with main_col:
+        if not st.session_state.get("selected_startup_id"):
+            st.info("Select a startup from the left panel to view details.")
+        else:
+            startup_data = db_utils.get_startup_info_by_id(st.session_state.selected_startup_id)
+            st.markdown("## 🚀 Startup Details")
+            st.markdown(f"**Name:** {startup_data['STARTUP_NAME']}")
+            st.markdown(f"**Industry:** {startup_data['INDUSTRY']}")
+            st.markdown(f"**Founder:** {startup_data['FOUNDER_NAME']}")
+            st.markdown(f"**Email:** {startup_data['EMAIL_ADDRESS']}")
+            st.markdown(f"**Website:** [Visit]({startup_data['WEBSITE_URL']})")
+            st.markdown(f"**LinkedIn:** [Profile]({startup_data['LINKEDIN_URL']})")
+            st.markdown(f"**Valuation Ask:** ${startup_data['VALUATION_ASK']:,.2f}")
+            st.markdown(f"**Short Description:** {startup_data['SHORT_DESCRIPTION']}")
+
+            if startup_data["PITCH_DECK_LINK"]:
+                st.markdown(f"[📄 View Pitch Deck]({startup_data['PITCH_DECK_LINK']})")
+
+            if startup_data.get("ANALYTICS_REPORT"):
+                st.download_button("📊 Download Analytics Report", data=startup_data["ANALYTICS_REPORT"], file_name="analytics_report.txt")

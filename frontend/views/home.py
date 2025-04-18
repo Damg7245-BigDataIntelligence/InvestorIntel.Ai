@@ -4,6 +4,8 @@ from PIL import Image
 import base64
 import sys
 
+FAST_API_URL = "http://localhost:8000"
+
 # Dynamically add project root (InvestorIntel.Ai/) to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 if PROJECT_ROOT not in sys.path:
@@ -97,7 +99,7 @@ def render():
             st.session_state.website_url = st.text_input("Website URL", value=st.session_state.website_url)
             st.session_state.linkedin_url = st.text_input("LinkedIn Profile URL", value=st.session_state.linkedin_url)
 
-            investor_options, investor_username_map = investorIntel_entity.get_all_investor_usernames()
+            investor_options = investorIntel_entity.get_all_investor_usernames()
             
             # Force 'investors' to always be a list
             if not isinstance(st.session_state.get("investors"), list):
