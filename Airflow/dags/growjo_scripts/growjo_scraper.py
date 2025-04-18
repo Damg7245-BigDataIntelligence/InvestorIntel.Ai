@@ -11,27 +11,28 @@ def get_recent_updates():
     options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--window-size=1920,1080')
 
     # ─── 2. Connect to your standalone-chrome service ───────────────────────────
     print("🔗 Connecting to Selenium at http://selenium:4444/wd/hub")
     driver = webdriver.Remote(
-        command_executor='http://selenium:4444/wd/hub',
+        command_executor='http://selenium-chrome:4444/wd/hub',
         options=options
     )
     print("✅ Connected!")
 
     try:
-        # ─── 3. Navigate & wait for your cards to appear ───────────────────────────
-        driver.get("https://example.com/your‑updates‑page")
+        # Directly access the updates page
+        driver.get("https://growjo.com/")  # Verify actual URL
+        
+        # Wait for card content
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.recent-card-maping"))
         )
-
-        # ─── 4. Parse the loaded HTML ───────────────────────────────────────────────
+        
+        # Parse data
         soup = BeautifulSoup(driver.page_source, "html.parser")
         return parse_card_data(soup)
+
 
     finally:
         driver.quit()

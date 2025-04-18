@@ -79,7 +79,6 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/requirements.txt:/opt/airflow/requirements.txt
-    - ${AIRFLOW_PROJ_DIR:-.}/.env:/opt/airflow/.env
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -120,6 +119,8 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
+    env_file:
+      - .env
     command: webserver
     ports:
       - "8080:8080"
@@ -137,6 +138,8 @@ services:
 
   airflow-scheduler:
     <<: *airflow-common
+    env_file:
+      - .env
     command: scheduler
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
@@ -152,13 +155,11 @@ services:
 
   airflow-worker:
     <<: *airflow-common
+    env_file:
+      - .env
     command: celery worker
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - downloads:/usr/local/airflow/downloads
     networks:
       - default
-      - container_bridge
     healthcheck:
       # yamllint disable rule:line-length
       test:
@@ -178,6 +179,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+      selenium-chrome:
+        condition: service_started
 
   airflow-triggerer:
     <<: *airflow-common
@@ -293,23 +296,14 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  selenium:
-    image: selenium/standalone-chrome
-    platform: linux/amd64
-    container_name: selenium
-    networks:
-      - default
-      - container_bridge
+  selenium-chrome:
+    image: seleniarm/standalone-chromium:latest
+    shm_size: 2gb
     ports:
       - "4444:4444"
-    shm_size: '2gb'  # important for Chrome stability
-    volumes:
-      - downloads:/home/seluser/Downloads
 
 networks:
   default:
-  container_bridge:
-    external: true
 
 volumes:
   postgres-db-volume:
