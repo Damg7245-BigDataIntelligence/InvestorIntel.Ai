@@ -5,6 +5,21 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient
 
+# Mock Supabase and other external dependencies before importing modules that use them
+mock_supabase = MagicMock()
+mock_log_interaction = MagicMock()
+
+# Apply patches
+patches = [
+    patch('database.log_gemini_interaction.create_client', return_value=mock_supabase),
+    patch('database.log_gemini_interaction.log_gemini_interaction', mock_log_interaction),
+    patch('langgraph_builder.log_gemini_interaction', mock_log_interaction)
+]
+
+for p in patches:
+    p.start()
+
+# Now import the modules that depend on these
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
