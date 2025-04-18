@@ -2,14 +2,14 @@ from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 import os
 import google.generativeai as genai
-from backend.state import AnalysisState
-from backend.pinecone_pipeline.summary import summarize_pitch_deck_with_gemini
-from backend.pinecone_pipeline.embedding_manager import EmbeddingManager
-from backend.s3_utils import upload_pitch_deck_to_s3
+from state import AnalysisState
+from pinecone_pipeline.summary import summarize_pitch_deck_with_gemini
+from pinecone_pipeline.embedding_manager import EmbeddingManager
+from s3_utils import upload_pitch_deck_to_s3
 import snowflake.connector
 from pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
 import datetime
-from database.log_gemini_interaction import log_gemini_interaction
+from log_gemini_interaction import log_gemini_interaction
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")

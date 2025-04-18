@@ -28,22 +28,24 @@ jobs:
         
     - name: Create mock environment variables for testing
       run: |
-        echo "AWS_ACCESS_KEY_ID=dummy" >> .env
-        echo "AWS_SECRET_ACCESS_KEY=dummy" >> .env
-        echo "AWS_S3_BUCKET_NAME=dummy" >> .env
-        echo "AWS_REGION=us-east-1" >> .env
-        echo "GEMINI_API_KEY=dummy" >> .env
-        echo "PINECONE_API_KEY=dummy" >> .env
-        echo "SNOWFLAKE_USER=dummy" >> .env
-        echo "SNOWFLAKE_PASSWORD=dummy" >> .env
-        echo "SNOWFLAKE_ACCOUNT=dummy" >> .env
-        echo "SNOWFLAKE_WAREHOUSE=dummy" >> .env
-        echo "SNOWFLAKE_DATABASE=INVESTOR_INTEL_DB" >> .env
-        echo "SNOWFLAKE_ROLE=dummy" >> .env
+        echo "SUPABASE_URL=https://example.supabase.co" >> $GITHUB_ENV
+        echo "SUPABASE_KEY=mock_key" >> $GITHUB_ENV
+        echo "AWS_ACCESS_KEY_ID=dummy" >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=dummy" >> $GITHUB_ENV
+        echo "AWS_S3_BUCKET_NAME=dummy" >> $GITHUB_ENV
+        echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
+        echo "GEMINI_API_KEY=dummy" >> $GITHUB_ENV
+        echo "PINECONE_API_KEY=dummy" >> $GITHUB_ENV
+        echo "SNOWFLAKE_USER=dummy" >> $GITHUB_ENV
+        echo "SNOWFLAKE_PASSWORD=dummy" >> $GITHUB_ENV
+        echo "SNOWFLAKE_ACCOUNT=dummy" >> $GITHUB_ENV
+        echo "SNOWFLAKE_WAREHOUSE=dummy" >> $GITHUB_ENV
+        echo "SNOWFLAKE_DATABASE=INVESTOR_INTEL_DB" >> $GITHUB_ENV
+        echo "SNOWFLAKE_ROLE=dummy" >> $GITHUB_ENV
     
     - name: Create test data directory
       run: |
-        mkdir -p test_data
+        mkdir -p backend/tests/test_data
         # Create a simple PDF file for testing
         echo "%PDF-1.5
         1 0 obj
@@ -72,17 +74,47 @@ jobs:
         << /Size 5 /Root 1 0 R >>
         startxref
         308
-        %%EOF" > test_data/sample_pitch_deck.pdf
+        %%EOF" > backend/tests/test_data/sample_pitch_deck.pdf
       
     - name: Run unit tests
+      env:
+        SUPABASE_URL: https://example.supabase.co
+        SUPABASE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3aXNqZWNuc3lvZ2VoYWZmcWpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NzI3MzgxMDYsImV4cCI6MTk4ODMxNDEwNn0.mock_key
+        AWS_ACCESS_KEY_ID: dummy
+        AWS_SECRET_ACCESS_KEY: dummy
+        AWS_S3_BUCKET_NAME: dummy
+        AWS_REGION: us-east-1
+        GEMINI_API_KEY: dummy
+        PINECONE_API_KEY: dummy
+        SNOWFLAKE_USER: dummy
+        SNOWFLAKE_PASSWORD: dummy
+        SNOWFLAKE_ACCOUNT: dummy
+        SNOWFLAKE_WAREHOUSE: dummy
+        SNOWFLAKE_DATABASE: INVESTOR_INTEL_DB
+        SNOWFLAKE_ROLE: dummy
       run: |
         cd backend
-        pytest tests/test_all.py -v
+        pytest tests/unit_tests.py -v
         
     - name: Run integration tests
+      env:
+        SUPABASE_URL: https://example.supabase.co
+        SUPABASE_KEY: mock_key
+        AWS_ACCESS_KEY_ID: dummy
+        AWS_SECRET_ACCESS_KEY: dummy
+        AWS_S3_BUCKET_NAME: dummy
+        AWS_REGION: us-east-1
+        GEMINI_API_KEY: dummy
+        PINECONE_API_KEY: dummy
+        SNOWFLAKE_USER: dummy
+        SNOWFLAKE_PASSWORD: dummy
+        SNOWFLAKE_ACCOUNT: dummy
+        SNOWFLAKE_WAREHOUSE: dummy
+        SNOWFLAKE_DATABASE: INVESTOR_INTEL_DB
+        SNOWFLAKE_ROLE: dummy
       run: |
         cd backend
-        python -m pytest tests/integration/tests.py -v
+        python -m pytest tests/integration_tests.py -v
 
   security-scan:
     runs-on: ubuntu-latest

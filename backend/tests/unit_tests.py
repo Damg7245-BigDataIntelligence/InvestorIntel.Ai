@@ -2,12 +2,36 @@ import pytest
 from unittest.mock import patch, MagicMock
 import os
 import sys
+
+# Add mocks directory to path so we can import our mocks
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mocks'))
+
+# Mock the database module
+from .mocks import database_mock
+sys.modules['database'] = MagicMock()
+sys.modules['database.log_gemini_interaction'] = database_mock
+
+# Set environment variables
+os.environ.update({
+    "SUPABASE_URL": "https://example.supabase.co",
+    "SUPABASE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3aXNqZWNuc3lvZ2VoYWZmcWpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NzI3MzgxMDYsImV4cCI6MTk4ODMxNDEwNn0.mock_key",
+    "AWS_ACCESS_KEY_ID": "dummy",
+    "AWS_SECRET_ACCESS_KEY": "dummy",
+    "AWS_S3_BUCKET_NAME": "dummy",
+    "AWS_REGION": "us-east-1",
+    "GEMINI_API_KEY": "dummy",
+    "PINECONE_API_KEY": "dummy",
+    "SNOWFLAKE_USER": "dummy",
+    "SNOWFLAKE_PASSWORD": "dummy",
+    "SNOWFLAKE_ACCOUNT": "dummy",
+    "SNOWFLAKE_WAREHOUSE": "dummy",
+    "SNOWFLAKE_DATABASE": "INVESTOR_INTEL_DB",
+    "SNOWFLAKE_ROLE": "dummy",
+})
+
+# Now import the modules that depend on these
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient
-
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-
 from main import app
 from s3_utils import generate_presigned_url, upload_pitch_deck_to_s3
 from vector_storage_service import get_embedding_model, generate_embeddings
