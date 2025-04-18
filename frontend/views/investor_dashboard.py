@@ -891,19 +891,7 @@ def display_startup_details(startup_id, main_col):
             news_text = fetch_report("news_report", startup_id)
             if news_text:
                 # Parse the news text - assuming format like "Title: URL"
-                news_items = news_text.strip().split('\n')
-                
-                # Display each news item with better formatting
-                for item in news_items:
-                    if ':' in item:
-                        parts = item.split(':', 1)
-                        title = parts[0].strip()
-                        url = parts[1].strip()
-                        st.markdown(f"#### {title}")
-                        st.markdown(f"[Read more]({url})")
-                        st.markdown("---")
-                    else:
-                        st.markdown(f"- {item}")
+                st.markdown(news_text)
             else:
                 st.info("No news data available for this startup.")
 
