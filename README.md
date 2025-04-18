@@ -70,7 +70,7 @@ When investors log in, the LangGraph-powered multi-agent system activates, provi
 - Stores and indexes this data in both Snowflake and Pinecone for contextual retrieval
 
 #### **4. Web Search Agent**
-- Gathers live news and web trends via Tavily/SerpAPI/Google Trends
+- Gathers live news and web trends via MCP Server custom query
 - Enhances trend insights and competitor monitoring
 - Provides real-time market intelligence to supplement stored data
 
