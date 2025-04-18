@@ -20,6 +20,17 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+def fetch_report(column_name, startup_id):
+    resp = requests.post(
+        f"{FAST_API_URL}/get-startup-column",
+        json={"column_name": column_name, "startup_id": startup_id}
+    )
+    if resp.status_code == 200:
+        return resp.json().get("value")
+    else:
+        # you could st.error() here or return None
+        return None
+
 def dashboard_header(first_name):
     # Set padding to 0 for top alignment
     st.markdown("""
@@ -112,7 +123,8 @@ def dashboard_sidebar(sidebar_col, investor_id):
 
 def dashboard_main(main_col):
     with main_col:
-        if not st.session_state.get("selected_startup_id"):
+        startup_id = st.session_state.get("selected_startup_id")
+        if not startup_id:
             st.info("Select a startup from the left panel to view details.")
             return
 
@@ -138,12 +150,9 @@ def dashboard_main(main_col):
             st.markdown("## 🚀 Startup Details")
             st.markdown(f"**Name:** {startup_data['STARTUP_NAME']}")
             st.markdown(f"**Industry:** {startup_data['INDUSTRY']}")
-            st.markdown(f"**Founder:** {startup_data['FOUNDER_NAME']}")
             st.markdown(f"**Email:** {startup_data['EMAIL_ADDRESS']}")
             st.markdown(f"**Website:** [Visit]({startup_data['WEBSITE_URL']})")
-            st.markdown(f"**LinkedIn:** [Profile]({startup_data['LINKEDIN_URL']})")
             st.markdown(f"**Valuation Ask:** ${startup_data['VALUATION_ASK']:,.2f}")
-            st.markdown(f"**Short Description:** {startup_data['SHORT_DESCRIPTION']}")
 
             if startup_data["PITCH_DECK_LINK"]:
                 st.markdown(f"[📄 View Pitch Deck]({startup_data['PITCH_DECK_LINK']})")
@@ -151,20 +160,30 @@ def dashboard_main(main_col):
             if startup_data.get("ANALYTICS_REPORT"):
                 st.download_button("📊 Download Analytics Report", data=startup_data["ANALYTICS_REPORT"], file_name="analytics_report.txt")
 
+            summary_text = fetch_report("summary_report", startup_id)
+            st.info(summary_text)
+
+
         # ---------- 🟡 Competitor Analysis Tab ----------
         with tab2:
             st.markdown("### 🧩 Competitor Analysis")
             st.info("Competitor analysis content goes here...")
+               # or "analytics_report" if that’s your real column
+
 
         # ---------- 🔵 Market Analysis Tab ----------
         with tab3:
             st.markdown("### 🌐 Market Analysis")
             st.info("Market trends, segmentation, and other analysis will be shown here...")
+            analytics_text = fetch_report("analytics_report", startup_id) 
+            st.info(analytics_text)
 
         # ---------- 🔴 News Trends Tab ----------
         with tab4:
             st.markdown("### 🗞️ News Trends")
             st.info("Latest news and trends related to this startup will be displayed here...")
+            news_text = fetch_report("news_report", startup_id)
+            st.info(news_text)
 
 
 def render():
@@ -190,15 +209,48 @@ def render():
     investor_id = investor_info["INVESTOR_ID"]
     first_name = investor_info["FIRST_NAME"]
 
+    # ←——— INSERT THIS ENTIRE BLOCK right here, before you call dashboard_header()
+    st.markdown("""
+        <style>
+    .header {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background-color: white;
+    }
+
+    .content-scroll {
+        /* fill the viewport below your 70px header */
+        height: calc(1vh - 70px);
+        margin-top: 0;      /* no extra gap */
+        padding-top: 0;     /* ditto */
+        overflow-y: auto;
+    }
+
+    .sidebar-container {
+        border-right: 1px solid #ccc;
+        padding-right: 15px;
+    }
+
+    .block-container {
+        padding-top: 0 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     # -------- 🧢 HEADER (Logo + Welcome + Logout) --------
+    # ←——— WRAP your header call inside this div
+    st.markdown('<div class="header">', unsafe_allow_html=True)
     dashboard_header(first_name)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
     # -------- 🧭 MAIN LAYOUT (Sidebar + Main) --------
     # 👉 Wrap sidebar in scrollable styled container with right border
     st.markdown("""
         <style>
             .sidebar-container {
-                border-right: 1px solid #ccc;
+                border-right: 5px solid #ccc;
                 padding-right: 15px;
                 max-height: 75vh;
                 overflow-y: auto;
@@ -206,9 +258,12 @@ def render():
         </style>
     """, unsafe_allow_html=True)
 
-    # Columns layout
+    # ←——— NOW start the scrollable wrapper just before your columns
+    st.markdown('<div class="home-scroll">', unsafe_allow_html=True)
+
     sidebar_col, main_col = st.columns([1.3, 5.7])
-
     dashboard_sidebar(sidebar_col, investor_id)
-
     dashboard_main(main_col)
+
+    # ←——— CLOSE the scrollable wrapper right after your main content
+    st.markdown('</div>', unsafe_allow_html=True)

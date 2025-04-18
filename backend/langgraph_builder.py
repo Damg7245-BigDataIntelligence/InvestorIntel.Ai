@@ -7,7 +7,7 @@ from pinecone_pipeline.summary import summarize_pitch_deck_with_gemini
 from pinecone_pipeline.embedding_manager import EmbeddingManager
 from s3_utils import upload_pitch_deck_to_s3
 import snowflake.connector
-from pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
+from backend.pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
 import datetime
 from log_gemini_interaction import log_gemini_interaction
 import plotly.graph_objects as go

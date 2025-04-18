@@ -26,3 +26,23 @@ def get_startup_info_by_id(startup_id):
     cur.execute("SELECT * FROM startup_information.startup WHERE startup_id = %s", (startup_id,))
     row = cur.fetchone()
     return dict(zip([desc[0] for desc in cur.description], row))
+
+def get_startup_column_by_id(column_name: str, startup_id: int):
+    conn, cur = account_login()
+    # Build the query with the column name injected
+    query = f"""
+        SELECT s.{column_name}
+        FROM startup_information.startup AS s
+        WHERE s.startup_id = %s
+    """
+
+    # Execute with only the ID as a parameter
+    try:
+        cur.execute(query, (startup_id,))
+        row = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    # 4) Return the single value (or None if not found)
+    return row[0] if row else None

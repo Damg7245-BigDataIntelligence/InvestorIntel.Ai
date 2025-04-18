@@ -17,7 +17,7 @@ def create_InvestorIntel_entities(conn, cur):
 
     # Step 2: Create Investor Table
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS startup_information.investor (
+        CREATE OR REPLACE TABLE startup_information.investor (
             investor_id         NUMBER AUTOINCREMENT PRIMARY KEY,
             first_name          STRING,
             last_name           STRING,
@@ -30,17 +30,16 @@ def create_InvestorIntel_entities(conn, cur):
 
     # Step 3: Create Startup Table
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS startup_information.startup (
+        CREATE OR REPLACE TABLE startup_information.startup (
             startup_id          NUMBER AUTOINCREMENT PRIMARY KEY,
-            startup_name        STRING,
+            startup_name        STRING UNIQUE,
             industry            STRING,
-            founder_name        STRING,
             email_address       STRING,
             website_url         STRING,
-            linkedin_url        STRING,
             valuation_ask       NUMBER(18, 2),
-            short_description   STRING,
-            analytics_report   STRING,
+            summary_report      STRING,
+            analytics_report    STRING,
+            news_report         STRING,
             pitch_deck_link     STRING,
             pitch_deck_filename STRING,
             created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -50,7 +49,7 @@ def create_InvestorIntel_entities(conn, cur):
 
     # Step 4: Create Bridge Table to map Investors to Startups
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS startup_information.startup_investor_map (
+        CREATE OR REPLACE TABLE startup_information.startup_investor_map (
             map_id              NUMBER AUTOINCREMENT PRIMARY KEY,
             startup_id          NUMBER,
             investor_id         NUMBER,
@@ -65,6 +64,20 @@ def create_InvestorIntel_entities(conn, cur):
         );
     """)
     print("Bridge table startup_investor_map created successfully.")
+
+    # Step 5: Create Startup Bridge table to map Startups to Founders
+    cur.execute("""
+        CREATE OR REPLACE TABLE startup_information.startup_founder_map (
+            map_id              NUMBER AUTOINCREMENT PRIMARY KEY,
+            startup_name        STRING,
+            founder_name        STRING,
+            founder_linkedin    STRING,
+            created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_startup FOREIGN KEY (startup_name)
+                REFERENCES startup_information.startup(startup_name)
+        );
+    """)
+    print("Bridge table startup_founder_map created successfully.")
     
     conn.commit()  # Commit the changes
     print("InvestorIntel schema and tables created successfully.")
@@ -88,27 +101,23 @@ def insert_investor(first_name, last_name, email_address, username):
         conn.rollback()
         print(f"❌ Failed to insert investor: {e}")
 
-def insert_startup(startup_name, founder_name, email_address, website_url, linkedin_url, valuation_ask, industry):
+def insert_startup(startup_name, email_address, website_url, valuation_ask, industry):
     conn, cur = account_login()
     try:
         insert_query = """
             INSERT INTO startup_information.startup (
                 startup_name,
-                founder_name,
                 email_address,
                 website_url,
-                linkedin_url,
                 valuation_ask,
                 industry
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s);
+            VALUES (%s, %s, %s, %s, %s);
         """
         cur.execute(insert_query, (
             startup_name,
-            founder_name,
             email_address,
             website_url,
-            linkedin_url,
             valuation_ask,
             industry
         ))
@@ -117,6 +126,45 @@ def insert_startup(startup_name, founder_name, email_address, website_url, linke
     except Exception as e:
         conn.rollback()
         print(f"❌ Failed to insert startup: {e}")
+    
+def insert_startup_founder_map(founders_list):
+    conn, cur = account_login()
+    """
+    founders_list should be a list of dicts like:
+      {"startup_name": "...",
+       "founder_name": "...",
+       "linkedin_url": "..."}
+    """
+    cur = conn.cursor()
+    
+    try:
+        for founder in founders_list:
+            startup_name   = founder.get("startup_name")
+            founder_name   = founder.get("founder_name")
+            linkedin_url   = founder.get("linkedin_url")
+
+            if not (startup_name and founder_name and linkedin_url):
+                print(f"⚠️ Missing data for founder entry {founder!r}, skipping.")
+                continue
+
+            cur.execute(
+                """
+                INSERT INTO startup_information.startup_founder_map
+                  (startup_name, founder_name, founder_linkedin)
+                VALUES (%s, %s, %s);
+                """,
+                (startup_name, founder_name, linkedin_url)
+            )
+
+        conn.commit()
+        print("✅ Mapping complete.")
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Failed to map startup to founders: {e}")
+        # re‑raise if you want upstream code to also see the failure
+        raise
+
 
 def map_startup_to_investors(startup_name, investor_usernames):
     conn, cur = account_login()
@@ -177,8 +225,6 @@ def get_all_investor_usernames():
     except Exception as e:
         print(f"❌ Failed to fetch investor usernames: {e}")
         return []
-
-    
 
 
 if __name__ == "__main__":

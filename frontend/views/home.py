@@ -73,12 +73,10 @@ def render():
             # Initialize once
             for key, default in {
                 "startup_name": "",
-                "founder_name": "",
                 "email_address": "",
                 "valuation_ask": 0.0,
                 "industry": "",
                 "website_url": "",
-                "linkedin_url": "",
                 "investors": [],
                 "pitch_deck_uploaded": False,
                 "pitch_deck_file": None
@@ -87,7 +85,6 @@ def render():
 
             # Form fields
             st.session_state.startup_name = st.text_input("Startup Name", value=st.session_state.startup_name)
-            st.session_state.founder_name = st.text_input("Founder Name", value=st.session_state.founder_name)
             st.session_state.email_address = st.text_input("Contact Email", value=st.session_state.email_address)
             st.session_state.valuation_ask = st.number_input("Valuation Ask (USD)", min_value=0.0, format="%.2f", value=st.session_state.valuation_ask)
             st.session_state.industry = st.text_input("Industry", value=st.session_state.industry)
@@ -98,7 +95,6 @@ def render():
                     st.session_state.pitch_deck_file = uploaded_file
 
             st.session_state.website_url = st.text_input("Website URL", value=st.session_state.website_url)
-            st.session_state.linkedin_url = st.text_input("LinkedIn Profile URL", value=st.session_state.linkedin_url)
 
             # investor_options = investorIntel_entity.get_all_investor_usernames()
             resp = requests.get(f"{FAST_API_URL}/fetch-investor-usernames")
@@ -131,15 +127,90 @@ def render():
 
             selected_usernames = [label.split(" (")[0] for label in selected_labels]
 
+
+            # add a default for number of founders and their lists
+            for key, default in {
+                "founders_count": 1,
+                "founder_names": [""],
+                "founder_linkedin_urls": [""],
+            }.items():
+                st.session_state.setdefault(key, default)
+
+            # after your other fields (valuation, industry, pitch deck, website, etc.)
+            # ───── DYNAMIC FOUNDERS BLOCK ─────
+            st.markdown("### 👥 Founders")
+
+            # let user pick how many founders (up to 5 here)
+            st.session_state.founders_count = st.number_input(
+                "Select number of founders",
+                min_value=1,
+                max_value=5,
+                step=1,
+                value=st.session_state.founders_count,
+                key="founders_count_input"
+            )
+
+            # make sure our lists are the right length
+            count = st.session_state.founders_count
+            names = st.session_state.founder_names
+            links = st.session_state.founder_linkedin_urls
+
+            if len(names) < count:
+                names += [""] * (count - len(names))
+            elif len(names) > count:
+                names = names[:count]
+
+            if len(links) < count:
+                links += [""] * (count - len(links))
+            elif len(links) > count:
+                links = links[:count]
+
+            st.session_state.founder_names = names
+            st.session_state.founder_linkedin_urls = links
+
+            # now render each pair of inputs
+            for i in range(count):
+                col_name, col_linkedin = st.columns([2, 3])
+                st.session_state.founder_names[i] = col_name.text_input(
+                    f"Founder #{i+1} Name",
+                    value=st.session_state.founder_names[i],
+                    key=f"founder_name_{i}"
+                )
+                st.session_state.founder_linkedin_urls[i] = col_linkedin.text_input(
+                    f"Founder #{i+1} LinkedIn URL",
+                    value=st.session_state.founder_linkedin_urls[i],
+                    key=f"founder_linkedin_{i}"
+                )
+                
             # Handle submit
             if st.button("Submit"):
                 missing = []
-                if not st.session_state.startup_name: missing.append("Startup Name")
-                if not st.session_state.founder_name: missing.append("Founder Name")
-                if not st.session_state.email_address: missing.append("Contact Email")
-                if not st.session_state.valuation_ask: missing.append("Valuation Ask")
-                if not st.session_state.industry: missing.append("Industry")
-                if not st.session_state.pitch_deck_file: missing.append("Pitch Deck Document")
+
+                # core startup fields
+                if not st.session_state.startup_name:
+                    missing.append("Startup Name")
+                if not st.session_state.email_address:
+                    missing.append("Contact Email")
+                if not st.session_state.valuation_ask:
+                    missing.append("Valuation Ask")
+                if not st.session_state.industry:
+                    missing.append("Industry")
+                if not st.session_state.pitch_deck_file:
+                    missing.append("Pitch Deck Document")
+                if not st.session_state.website_url:
+                    missing.append("Website URL")
+
+                # investor selection (optional—uncomment if you require ≥1)
+                # if not selected_usernames:
+                #     missing.append("Potential Investors")
+
+                # dynamic founders
+                for idx, name in enumerate(st.session_state.founder_names, start=1):
+                    if not name.strip():
+                        missing.append(f"Founder #{idx} Name")
+                for idx, url in enumerate(st.session_state.founder_linkedin_urls, start=1):
+                    if not url.strip():
+                        missing.append(f"Founder #{idx} LinkedIn URL")
 
                 if missing:
                     st.error("⚠️ The following required fields are missing:")
@@ -147,43 +218,48 @@ def render():
                         st.markdown(f"- ❌ **{field}**")
                 else:
                     try:
-
-                        # investorIntel_entity.insert_startup(
-                        #     st.session_state.startup_name,
-                        #     st.session_state.founder_name,
-                        #     st.session_state.email_address,
-                        #     st.session_state.website_url,
-                        #     st.session_state.linkedin_url,
-                        #     st.session_state.valuation_ask,
-                        #     st.session_state.industry
-                        # )
-                        # investorIntel_entity.map_startup_to_investors(
-                        #     st.session_state.startup_name,
-                        #     selected_usernames
-                        # )
-
+                        founder_list = [
+                            {
+                                "startup_name": st.session_state.startup_name,
+                                "founder_name": name,
+                                "linkedin_url": url
+                            }
+                            for name, url in zip(
+                                st.session_state.founder_names,
+                                st.session_state.founder_linkedin_urls
+                            )
+                        ]
+                        # Save the pitch deck file
                         requests.post(
                             f"{FAST_API_URL}/add-startup-info",
                             json={
                                 "startup_name": st.session_state.startup_name,
-                                "founder_name": st.session_state.founder_name,
                                 "email_address": st.session_state.email_address,
                                 "website_url": st.session_state.website_url,
-                                "linkedin_url": st.session_state.linkedin_url,
                                 "valuation_ask": st.session_state.valuation_ask,
                                 "industry": st.session_state.industry,
-                                "investor_usernames": selected_usernames
+                                "investor_usernames": selected_usernames,
+                                "founder_list": founder_list
                             }
                         )
                         st.session_state.pitch_deck_uploaded = True
                         st.success("✅ Your pitch deck has been submitted successfully! Our team or investors will reach out to you if there's a fit. 🚀")
 
                         # Clear fields
-                        for field in [
-                            "startup_name", "founder_name", "email_address", "valuation_ask",
-                            "industry", "website_url", "linkedin_url", "investors"
-                        ]:
-                            st.session_state[field] = "" if isinstance(st.session_state[field], str) else 0.0
+                        # strings → ""
+                        for key in ["startup_name","email_address","website_url","industry"]:
+                            st.session_state[key] = ""
+                        # floats → 0.0
+                        st.session_state.valuation_ask = 0.0
+                        # lists → empty or initial
+                        st.session_state.investors             = []
+                        st.session_state.founders_count        = 1
+                        st.session_state.founder_names         = [""]
+                        st.session_state.founder_linkedin_urls = [""]
+                        # pitch deck flags
+                        st.session_state.pitch_deck_file     = None
+                        st.session_state.pitch_deck_uploaded = False
+
 
                     except Exception as e:
                         st.error(f"❌ Error during submission: {e}")
@@ -232,7 +308,7 @@ def render():
                             st.session_state.page = "investor_dashboard"
                             st.rerun()
                         else:
-                            st.error(f"❌ {response['message']}")
+                            st.error(f"❌ {result['message']}")
                     else:
                         st.error("⚠️ Enter both username and password.")
                 

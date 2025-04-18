@@ -42,13 +42,12 @@ class PitchDeckRequest(BaseModel):
 
 class StartupRequest(BaseModel):
     startup_name: str
-    founder_name: str
     email_address: str
     website_url: str
-    linkedin_url: str
     valuation_ask: float
     industry: str
     investor_usernames: list[str]
+    founder_list: list[dict]
 
 class InvestorRequest(BaseModel):
     first_name: str
@@ -76,6 +75,10 @@ class StartupInfoRequest(BaseModel):
 
 class InvestorByUsernameRequest(BaseModel):
     username: str
+
+class ColumnRequest(BaseModel):
+    column_name: str
+    startup_id:   int
 
 # ------- API Endpoints -------
 @app.get("/")
@@ -192,16 +195,17 @@ def add_startup(data: StartupRequest):
     try:
         investorIntel_entity.insert_startup(
             data.startup_name,
-            data.founder_name,
             data.email_address,
             data.website_url,
-            data.linkedin_url,
             data.valuation_ask,
             data.industry
         )
         investorIntel_entity.map_startup_to_investors(
             data.startup_name,
             data.investor_usernames
+        )
+        investorIntel_entity.insert_startup_founder_map(
+            data.founder_list
         )
         return {"status": "success", "message": "Startup added and mapped successfully."}
     except Exception as e:
@@ -305,4 +309,26 @@ def fetch_investor_by_username(req: InvestorByUsernameRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/get-startup-column")
+def get_startup_column(req: ColumnRequest):
+    """
+    Fetch a single column value for the given startup_id.
+    """
+    try:
+        # this will raise ValueError if column_name is invalid
+        value = db_utils.get_startup_column_by_id(req.column_name, req.startup_id)
+        if value is None:
+            # no such startup or column is NULL
+            raise HTTPException(status_code=404, detail="No data found")
+        return {
+            "value": value
+        }
+    except ValueError as ve:
+        # invalid column name
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        # unexpected errors
         raise HTTPException(status_code=500, detail=str(e))
