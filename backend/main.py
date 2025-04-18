@@ -18,7 +18,7 @@ app = FastAPI(
 )
 
 # Create the langgraph
-graph = build_analysis_graph()
+graph = None
 
 # Add CORS middleware to allow requests from the Streamlit frontend
 app.add_middleware(
@@ -122,8 +122,11 @@ async def process_pitch_deck(
                 "website_url": website_url,
                 "original_filename": original_filename
             }
-            print("Initial state:", initial_state)
             # Invoke the graph with our initial state
+            global graph
+            if not graph:
+                graph = build_analysis_graph()
+
             result = await graph.ainvoke(initial_state)
             
             # Check for errors
