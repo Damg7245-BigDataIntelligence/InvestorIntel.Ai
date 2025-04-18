@@ -7,6 +7,9 @@ import json
 import traceback
 import re
 from PIL import Image
+import plotly.graph_objects as go
+import plotly.express as px
+import plotly.io as pio
 
 FAST_API_URL = "http://localhost:8000"
 
@@ -95,6 +98,16 @@ def apply_custom_styling():
         padding: 15px;
         border-radius: 8px;
         margin-bottom: 15px;
+    }
+    .report-container {
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #e9ecef;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        overflow-y: auto;
+        max-height: 800px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -282,6 +295,27 @@ if st.session_state.page == 'upload':
                                 st.success("Pitch deck processed successfully!")
                                 st.subheader("Investor Summary")
                                 st.markdown(result["summary"])
+                                
+                                # Display competitor visualizations if available
+                                if "competitor_visualizations" in result and result["competitor_visualizations"]:
+                                    st.subheader("Competitor Analysis")
+                                    col1, col2 = st.columns(2)
+                                    
+                                    with col1:
+                                        if "revenue_chart" in result["competitor_visualizations"]:
+                                            revenue_fig = go.Figure(result["competitor_visualizations"]["revenue_chart"])
+                                            st.plotly_chart(revenue_fig, use_container_width=True)
+                                    
+                                    with col2:
+                                        if "growth_chart" in result["competitor_visualizations"]:
+                                            growth_fig = go.Figure(result["competitor_visualizations"]["growth_chart"])
+                                            st.plotly_chart(growth_fig, use_container_width=True)
+                                
+                                # Display investment analysis report if available
+                                if "final_report" in result and result["final_report"]:
+                                    st.subheader("Investment Analysis Report")
+                                    with st.expander("View Full Investment Report", expanded=True):
+                                        st.markdown(f'<div class="report-container">{result["final_report"]}</div>', unsafe_allow_html=True)
                                 
                                 # Display S3 location info
                                 st.subheader("Storage Information")

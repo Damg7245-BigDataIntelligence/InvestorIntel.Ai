@@ -10,6 +10,9 @@ import snowflake.connector
 from pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
 import datetime
 from log_gemini_interaction import log_gemini_interaction
+import plotly.graph_objects as go
+import plotly.express as px
+import json
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -80,8 +83,8 @@ def snowflake_query(query, params=None):
 
 def get_startup_summary(startup_name: str):
     query = """
-    SELECT startup_name, industry, short_description 
-    FROM INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY
+    SELECT startup_name, industry, summary_report 
+    FROM INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
     WHERE startup_name = %s
     LIMIT 1
     """
@@ -111,8 +114,8 @@ def get_top_companies(industry_name: str):
 
 def store_analysis_report(startup_name: str, report_text: str):
     query = """
-    UPDATE INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY
-    SET analysis_report = %s
+    UPDATE INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
+    SET analytics_report = %s
     WHERE startup_name = %s
     """
     conn = snowflake.connector.connect(
@@ -250,15 +253,22 @@ def fetch_industry_report(state):
 def fetch_competitors(state):
     if not state.get("summary") or not isinstance(state["summary"], dict):
         state["competitors"] = []
+        state["competitor_visualizations"] = None
         return state
     
     industry = state["summary"].get("INDUSTRY")
     if not industry:
         state["competitors"] = []
+        state["competitor_visualizations"] = None
         return state
         
     competitors = get_top_companies(industry)
     state["competitors"] = competitors
+    
+    # Generate visualizations for the competitors
+    visualizations = generate_competitor_visualizations(competitors)
+    state["competitor_visualizations"] = visualizations
+    
     return state
 
 def generate_report(state):
@@ -351,8 +361,8 @@ async def fetch_news(state):
 def store_news_in_snowflake(startup_name: str, news: str):
     """Store the news in the Snowflake table"""
     query = """
-    UPDATE INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY
-    SET news = %s
+    UPDATE INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
+    SET news_report = %s
     WHERE startup_name = %s
     """
     conn = snowflake.connector.connect(
@@ -368,6 +378,79 @@ def store_news_in_snowflake(startup_name: str, news: str):
     cursor.close()
     conn.close()
 
+def generate_competitor_visualizations(competitors):
+    """Generate plotly visualizations for competitors data"""
+    if not competitors or len(competitors) == 0:
+        return None
+    
+    # Extract data for plots and convert to appropriate types
+    companies = [str(comp.get('COMPANY', 'Unknown')) for comp in competitors]
+    
+    # Convert revenue values to float - handle possible strings or None values
+    revenues = []
+    for comp in competitors:
+        rev = comp.get('REVENUE', 0)
+        try:
+            revenues.append(float(rev) if rev is not None else 0.0)
+        except (ValueError, TypeError):
+            revenues.append(0.0)
+    
+    # Convert growth rate values to float
+    growth_rates = []
+    for comp in competitors:
+        growth = comp.get('EMP_GROWTH_PERCENT', 0)
+        try:
+            growth_rates.append(float(growth) if growth is not None else 0.0)
+        except (ValueError, TypeError):
+            growth_rates.append(0.0)
+    
+    # Print debug info
+    print(f"Companies: {companies}")
+    print(f"Revenues (after conversion): {revenues}")
+    print(f"Growth rates (after conversion): {growth_rates}")
+    
+    # Create revenue bar chart
+    revenue_fig = px.bar(
+        x=companies, 
+        y=revenues,
+        labels={'x': 'Company', 'y': 'Revenue ($)'},
+        title='Top Competitors by Revenue',
+        color_continuous_scale='Blues'
+    )
+    revenue_fig.update_layout(xaxis_tickangle=-45)
+    
+    # Create growth scatter plot - only use size parameter if we have valid numeric data
+    if all(isinstance(rev, (int, float)) for rev in revenues):
+        growth_fig = px.scatter(
+            x=companies,
+            y=growth_rates,
+            size=[max(0.1, rev) for rev in revenues],  # Ensure minimum size and all positive
+            size_max=15,  # Control maximum bubble size
+            labels={'x': 'Company', 'y': 'Employee Growth Rate (%)'},
+            title='Employee Growth Rate vs Company',
+            color_continuous_scale='Reds'
+        )
+    else:
+        # Fallback without size parameter if we have conversion issues
+        growth_fig = px.scatter(
+            x=companies,
+            y=growth_rates,
+            labels={'x': 'Company', 'y': 'Employee Growth Rate (%)'},
+            title='Employee Growth Rate vs Company',
+            color_continuous_scale='Reds'
+        )
+    
+    growth_fig.update_layout(xaxis_tickangle=-45)
+    
+    # Convert figures to JSON
+    revenue_json = json.loads(revenue_fig.to_json())
+    growth_json = json.loads(growth_fig.to_json())
+    
+    return {
+        'revenue_chart': revenue_json,
+        'growth_chart': growth_json
+    }
+
 # -------------------------
 # Graph Compiler
 # -------------------------
@@ -382,7 +465,7 @@ def build_analysis_graph():
     builder.add_node("fetch_competitors", fetch_competitors)
     builder.add_node("generate_report", generate_report)
     builder.add_node("store_report", store_report)
-    builder.add_node("fetch_news", fetch_news)  # New node for fetching news
+    # builder.add_node("fetch_news", fetch_news)  # New node for fetching news
 
     # Set conditional starting point
     builder.set_conditional_entry_point(
@@ -395,7 +478,7 @@ def build_analysis_graph():
     builder.add_edge("fetch_industry_report", "fetch_competitors")
     builder.add_edge("fetch_competitors", "generate_report")
     builder.add_edge("generate_report", "store_report")
-    builder.add_edge("store_report", "fetch_news")  # Add edge to fetch news
-    builder.add_edge("fetch_news", END)  # End after fetching news
+    builder.add_edge("store_report", END)  # Add edge to fetch news
+    # builder.add_edge("fetch_news", END)  # End after fetching news
 
     return builder.compile()

@@ -13,6 +13,7 @@ class AnalysisState(TypedDict):
     summary: Dict
     industry_report: str
     competitors: List[Dict]
+    competitor_visualizations: Optional[Dict]  # Store plotly graph JSONs
     final_report: str
     news: List[Dict]
 
