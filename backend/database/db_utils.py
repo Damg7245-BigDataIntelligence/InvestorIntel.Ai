@@ -1,4 +1,4 @@
-from backend.database.snowflake_connect import account_login
+from database.snowflake_connect import account_login
 from dotenv import load_dotenv
 import pandas as pd
 
@@ -35,11 +35,13 @@ def get_startup_column_by_id(column_name: str, startup_id: int):
         FROM startup_information.startup AS s
         WHERE s.startup_id = %s
     """
+    print(query)
 
     # Execute with only the ID as a parameter
     try:
         cur.execute(query, (startup_id,))
         row = cur.fetchone()
+        print("row", row)
     finally:
         cur.close()
         conn.close()

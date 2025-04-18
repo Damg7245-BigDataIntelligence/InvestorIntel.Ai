@@ -5,6 +5,9 @@ from PIL import Image
 import os
 import importlib.util
 import sys
+import plotly.graph_objects as go
+import json
+import re
 
 FAST_API_URL = "http://localhost:8000"
 
@@ -20,13 +23,87 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+# Function to convert formatted text to plain text with proper bullet formatting
+def convert_to_plain_text(text):
+    # Remove the initial information line if present
+    text = re.sub(r'^Here\'s the (CEO )?information.*?:', '', text)
+    text = re.sub(r'^Based on the provided search results:?', '', text)
+    text = re.sub(r'^Here are the.*?:', '', text)
+    
+    # Remove HTML tags
+    text = re.sub(r'<[^>]*>', '', text)
+    
+    # Replace HTML entities
+    text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&').replace('&quot;', '"')
+    
+    # Replace Markdown emphasis and bold with plain text
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)  # Remove bold **text**
+    text = re.sub(r'\*(.*?)\*', r'\1', text)      # Remove italic *text*
+    
+    # Remove result references (e.g., "(Result #2)")
+    text = re.sub(r'\s*\(Result #\d+\)', '', text)
+    text = re.sub(r'\s*\(Source \d+\)', '', text)
+    
+    # Split into lines for processing
+    lines = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            lines.append('')
+            continue
+            
+        # Process bullet points on same line
+        if '• ' in line and not line.startswith('• '):
+            parts = re.split(r'(• )', line)
+            result = []
+            for i in range(len(parts)):
+                if parts[i] == '• ' and i > 0 and parts[i-1] != '':
+                    # This is a bullet point that needs to start on a new line
+                    result.append('\n• ')
+                else:
+                    result.append(parts[i])
+            lines.append(''.join(result))
+        else:
+            # Handle other bullets format
+            if line.startswith('* ') or line.startswith('- '):
+                line = '• ' + line[2:]
+            lines.append(line)
+    
+    # Join lines back
+    text = '\n'.join(lines)
+    
+    # Make sure each bullet point starts on a new line
+    text = re.sub(r'([^\n])• ', r'\1\n• ', text)
+    
+    # Fix spacing after bullet points
+    text = re.sub(r'•\s*', '• ', text)
+    
+    # Clean up extra whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Remove leading/trailing whitespace
+    text = text.strip()
+    
+    return text
+
 def fetch_report(column_name, startup_id):
     resp = requests.post(
         f"{FAST_API_URL}/get-startup-column",
         json={"column_name": column_name, "startup_id": startup_id}
     )
     if resp.status_code == 200:
-        return resp.json().get("value")
+        value = resp.json().get("value")
+        # For visualization data, we need to ensure it's valid JSON
+        if column_name == "competitor_visualizations" and value:
+            try:
+                # Try to parse JSON if it's not already parsed
+                if isinstance(value, str):
+                    return json.loads(value)
+                return value
+            except json.JSONDecodeError:
+                print(f"Failed to parse visualization JSON: {value}")
+                return None
+        return value
     else:
         # you could st.error() here or return None
         return None
@@ -108,7 +185,11 @@ def dashboard_sidebar(sidebar_col, investor_id):
             else:
                 # Extract just the names for the Selectbox
                 startup_names = [s["startup_name"] for s in startup_list]
-                selected_name  = st.selectbox("**📄 Startups:**", startup_names)
+                selected_name = st.selectbox("**📄 Startups:**", startup_names)
+                
+                # When a startup is selected, disable chat mode
+                if selected_name:
+                    st.session_state.show_chat = False
 
                 # Find the matching ID
                 selected_id = next(
@@ -117,19 +198,123 @@ def dashboard_sidebar(sidebar_col, investor_id):
                     if s["startup_name"] == selected_name
                 )
                 st.session_state.selected_startup_id = selected_id
+            
+            # Add divider
+            st.markdown("---")
+            
+            # Add Q&A Bot Button
+            st.markdown("### 💬 AI Assistant")
+            if st.button("Ask Anything"):
+                # Enable chat mode and clear startup selection
+                st.session_state.show_chat = True
+                st.session_state.selected_startup_id = None
+                st.rerun()
 
             st.markdown("</div>", unsafe_allow_html=True)
 
 
 def dashboard_main(main_col):
     with main_col:
+        # Handle chat display if enabled - mutually exclusive with startup view
+        if st.session_state.get("show_chat", False):
+            st.markdown("## 💬 InvestorIntel AI Assistant")
+            st.markdown("Ask me any questions about startups, market trends, or investment strategies.")
+            
+            # Initialize chat history if not exists
+            if 'chat_history' not in st.session_state:
+                st.session_state.chat_history = []
+            
+            # Create a container for chat history
+            chat_container = st.container()
+            
+            # Display chat history
+            with chat_container:
+                for i, message in enumerate(st.session_state.chat_history):
+                    if message["role"] == "user":
+                        # For user messages, use a styled div
+                        st.markdown(f"""
+                        <div class="question-box">
+                        {message["content"]}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        # For assistant messages, use a styled div with properly formatted text
+                        plain_text = convert_to_plain_text(message["content"])
+                        st.markdown(f"""
+                        <div class="answer-box">
+                        {plain_text}
+                        </div>
+                        """, unsafe_allow_html=True)
+            
+            # Create a container for the input area
+            input_container = st.container()
+            
+            # Add a form with a single-line input field
+            with input_container:
+                with st.form(key="dashboard_chat_form", clear_on_submit=True):
+                    # Small fixed-height input field
+                    user_input = st.text_input("", key="dashboard_chat_input", placeholder="Type your question here...")
+                    
+                    # Add submit button at the bottom
+                    submit_button = st.form_submit_button("Send")
+                    
+                    if submit_button and user_input:
+                        # Get the user's query
+                        query = user_input
+                        
+                        # Add user message to chat history
+                        st.session_state.chat_history.append({"role": "user", "content": query})
+                        
+                        # Send query to backend
+                        with st.spinner('Searching database...'):
+                            try:
+                                response = requests.post(
+                                    f"{FAST_API_URL}/chat",
+                                    json={"query": query}
+                                )
+                                
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    ai_response = result.get("response", "Sorry, I couldn't find an answer to your question.")
+                                    
+                                    # Add assistant message to chat history
+                                    st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
+                                else:
+                                    error_msg = f"Error: {response.status_code} - {response.text}"
+                                    
+                                    # Add error message to chat history
+                                    st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+                                    
+                            except Exception as e:
+                                error_msg = f"An error occurred: {str(e)}"
+                                
+                                # Add error message to chat history
+                                st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+                        
+                        # Force a rerun to update the chat history display
+                        st.rerun()
+            
+            # Button to clear chat and return to startup view
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("Clear Chat"):
+                    st.session_state.chat_history = []
+                    st.rerun()
+            with col2:
+                if st.button("Return to Startups"):
+                    st.session_state.show_chat = False
+                    st.rerun()
+            
+            # We return here to avoid showing startup content
+            return
+        
+        # If we're not in chat mode, display startup information
         startup_id = st.session_state.get("selected_startup_id")
         if not startup_id:
             st.info("Select a startup from the left panel to view details.")
             return
 
         # Load startup data once
-        # startup_data = db_utils.get_startup_info_by_id(st.session_state.selected_startup_id)
         resp = requests.post(
             f"{FAST_API_URL}/fetch-startup-info",
             json={"startup_id": st.session_state.selected_startup_id}
@@ -137,10 +322,9 @@ def dashboard_main(main_col):
         data = resp.json()
         if data.get("status") == "success":
             startup_data = data["startup"]
-            # e.g. display details:
-            # st.write(startup_data)
         else:
             st.error(data.get("detail", "Unknown error"))
+            return
 
         # Create Tabs
         tab1, tab2, tab3, tab4 = st.tabs(["📄 Summary", "📊 Competitor Analysis", "📈 Market Analysis", "📰 News Trends"])
@@ -161,32 +345,173 @@ def dashboard_main(main_col):
                 st.download_button("📊 Download Analytics Report", data=startup_data["ANALYTICS_REPORT"], file_name="analytics_report.txt")
 
             summary_text = fetch_report("summary_report", startup_id)
-            st.info(summary_text)
-
+            if summary_text:
+                st.markdown("### Executive Summary")
+                st.info(summary_text)
+            else:
+                st.info("No summary available for this startup.")
 
         # ---------- 🟡 Competitor Analysis Tab ----------
         with tab2:
             st.markdown("### 🧩 Competitor Analysis")
-            st.info("Competitor analysis content goes here...")
-               # or "analytics_report" if that’s your real column
-
+            
+            visualization_data = fetch_report("competitor_visualizations", startup_id)
+            
+            if visualization_data:
+                try:
+                    # Parse the JSON data
+                    viz_data = visualization_data
+                    if isinstance(viz_data, str):
+                        viz_data = json.loads(viz_data)
+                    
+                    # Create columns for visualization charts
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if "revenue_chart" in viz_data:
+                            st.subheader("Revenue Comparison")
+                            revenue_fig = go.Figure(viz_data["revenue_chart"])
+                            st.plotly_chart(revenue_fig, use_container_width=True)
+                    
+                    with col2:
+                        if "growth_chart" in viz_data:
+                            st.subheader("Growth Metrics")
+                            growth_fig = go.Figure(viz_data["growth_chart"])
+                            st.plotly_chart(growth_fig, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error displaying visualizations: {e}")
+            else:
+                st.info("No competitor analysis data available for this startup.")
 
         # ---------- 🔵 Market Analysis Tab ----------
         with tab3:
             st.markdown("### 🌐 Market Analysis")
-            st.info("Market trends, segmentation, and other analysis will be shown here...")
+            
+            # Display the analytics report
             analytics_text = fetch_report("analytics_report", startup_id) 
-            st.info(analytics_text)
+            if analytics_text:
+                st.markdown("### Market Insights")
+                st.info(analytics_text)
+            
+                # Also display the visualizations in this tab
+                visualization_data = fetch_report("competitor_visualizations", startup_id)
+                
+                if visualization_data:
+                    try:
+                        # Parse the JSON data
+                        viz_data = visualization_data
+                        if isinstance(viz_data, str):
+                            viz_data = json.loads(viz_data)
+                        
+                        st.markdown("### Market Position")
+                        # Create columns for visualization charts
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if "revenue_chart" in viz_data:
+                                st.subheader("Revenue Comparison")
+                                revenue_fig = go.Figure(viz_data["revenue_chart"])
+                                st.plotly_chart(revenue_fig, use_container_width=True)
+                        
+                        with col2:
+                            if "growth_chart" in viz_data:
+                                st.subheader("Growth Metrics")
+                                growth_fig = go.Figure(viz_data["growth_chart"])
+                                st.plotly_chart(growth_fig, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Error displaying visualizations: {e}")
+            else:
+                st.info("No market analysis data available for this startup.")
 
         # ---------- 🔴 News Trends Tab ----------
         with tab4:
             st.markdown("### 🗞️ News Trends")
-            st.info("Latest news and trends related to this startup will be displayed here...")
             news_text = fetch_report("news_report", startup_id)
-            st.info(news_text)
+            if news_text:
+                # Parse the news text - assuming format like "Title: URL"
+                news_items = news_text.strip().split('\n')
+                
+                # Display each news item with better formatting
+                for item in news_items:
+                    if ':' in item:
+                        parts = item.split(':', 1)
+                        title = parts[0].strip()
+                        url = parts[1].strip()
+                        st.markdown(f"#### {title}")
+                        st.markdown(f"[Read more]({url})")
+                        st.markdown("---")
+                    else:
+                        st.markdown(f"- {item}")
+            else:
+                st.info("No news data available for this startup.")
 
 
 def render():
+    # Add custom styling for the dashboard and chat components
+    st.markdown("""
+    <style>
+    .main-header {
+        font-size: 42px;
+        font-weight: bold;
+        color: #1E3A8A;
+        margin-bottom: 10px;
+    }
+    
+    .stButton>button {
+        width: 100%;
+        background-color: #1E3A8A;
+        color: white;
+    }
+    
+    .question-box {
+        background-color: #E3F2FD;
+        border-left: 4px solid #1E88E5;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
+    
+    .answer-box {
+        background-color: #F5F7FF;
+        border-left: 4px solid #1E3A8A;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
+    
+    .header {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background-color: white;
+    }
+    
+    .content-scroll {
+        /* fill the viewport below your 70px header */
+        height: calc(1vh - 70px);
+        margin-top: 0;      /* no extra gap */
+        padding-top: 0;     /* ditto */
+        overflow-y: auto;
+    }
+    
+    .sidebar-container {
+        border-right: 1px solid #ccc;
+        padding-right: 15px;
+    }
+    
+    .block-container {
+        padding-top: 0 !important;
+    }
+    
+    .sidebar-container {
+        border-right: 5px solid #ccc;
+        padding-right: 15px;
+        max-height: 75vh;
+        overflow-y: auto;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     if not st.session_state.get("is_logged_in"):
         st.warning("You must log in first.")
         st.session_state.page = "home"
@@ -205,65 +530,21 @@ def render():
         #st.write(investor_info)
     else:
         st.error(data.get("detail", "Unknown error"))
+        return
 
     investor_id = investor_info["INVESTOR_ID"]
     first_name = investor_info["FIRST_NAME"]
 
-    # ←——— INSERT THIS ENTIRE BLOCK right here, before you call dashboard_header()
-    st.markdown("""
-        <style>
-    .header {
-        position: sticky;
-        top: 0;
-        z-index: 100;
-        background-color: white;
-    }
-
-    .content-scroll {
-        /* fill the viewport below your 70px header */
-        height: calc(1vh - 70px);
-        margin-top: 0;      /* no extra gap */
-        padding-top: 0;     /* ditto */
-        overflow-y: auto;
-    }
-
-    .sidebar-container {
-        border-right: 1px solid #ccc;
-        padding-right: 15px;
-    }
-
-    .block-container {
-        padding-top: 0 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
     # -------- 🧢 HEADER (Logo + Welcome + Logout) --------
-    # ←——— WRAP your header call inside this div
     st.markdown('<div class="header">', unsafe_allow_html=True)
     dashboard_header(first_name)
     st.markdown('</div>', unsafe_allow_html=True)
 
-
     # -------- 🧭 MAIN LAYOUT (Sidebar + Main) --------
-    # 👉 Wrap sidebar in scrollable styled container with right border
-    st.markdown("""
-        <style>
-            .sidebar-container {
-                border-right: 5px solid #ccc;
-                padding-right: 15px;
-                max-height: 75vh;
-                overflow-y: auto;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # ←——— NOW start the scrollable wrapper just before your columns
     st.markdown('<div class="home-scroll">', unsafe_allow_html=True)
 
     sidebar_col, main_col = st.columns([1.3, 5.7])
     dashboard_sidebar(sidebar_col, investor_id)
     dashboard_main(main_col)
 
-    # ←——— CLOSE the scrollable wrapper right after your main content
     st.markdown('</div>', unsafe_allow_html=True)

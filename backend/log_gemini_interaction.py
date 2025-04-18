@@ -46,9 +46,10 @@ def log_gemini_interaction(
         "tokens_used": tokens_used,
         "session_id": session_id
     }
-    
+    print("Log entry:", log_entry)
     try:
         result = supabase.table("GeminiLogs").insert(log_entry).execute()
+        print("Result:", result)
         return {"status": "success", "message": "Log entry created"}
     except Exception as e:
         print(f"Error logging Gemini interaction: {str(e)}")

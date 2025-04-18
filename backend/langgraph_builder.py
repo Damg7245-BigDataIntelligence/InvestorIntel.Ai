@@ -7,7 +7,7 @@ from pinecone_pipeline.summary import summarize_pitch_deck_with_gemini
 from pinecone_pipeline.embedding_manager import EmbeddingManager
 from s3_utils import upload_pitch_deck_to_s3
 import snowflake.connector
-from backend.pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
+from pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
 import datetime
 from log_gemini_interaction import log_gemini_interaction
 import plotly.graph_objects as go
@@ -257,7 +257,8 @@ def fetch_competitors(state):
         return state
     
     industry = state["summary"].get("INDUSTRY")
-    if not industry:
+    startup_name = state["summary"].get("STARTUP_NAME")
+    if not industry or not startup_name:
         state["competitors"] = []
         state["competitor_visualizations"] = None
         return state
@@ -268,6 +269,10 @@ def fetch_competitors(state):
     # Generate visualizations for the competitors
     visualizations = generate_competitor_visualizations(competitors)
     state["competitor_visualizations"] = visualizations
+    
+    # Store visualizations in Snowflake
+    if visualizations:
+        store_visualizations_in_snowflake(startup_name, visualizations)
     
     return state
 
@@ -450,6 +455,35 @@ def generate_competitor_visualizations(competitors):
         'revenue_chart': revenue_json,
         'growth_chart': growth_json
     }
+
+def store_visualizations_in_snowflake(startup_name: str, visualization_data: dict):
+    """Store the visualization data in the Snowflake table"""
+    # Convert the visualization data to a JSON string
+    viz_json = json.dumps(visualization_data)
+    
+    query = """
+    UPDATE INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP
+    SET competitor_visualizations = %s
+    WHERE startup_name = %s
+    """
+    try:
+        conn = snowflake.connector.connect(
+            user=SNOWFLAKE_USER,
+            password=SNOWFLAKE_PASSWORD,
+            account=SNOWFLAKE_ACCOUNT,
+            warehouse=SNOWFLAKE_WAREHOUSE,
+            database="INVESTOR_INTEL_DB"
+        )
+        cursor = conn.cursor()
+        cursor.execute(query, (viz_json, startup_name))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print(f"Successfully stored visualizations for {startup_name}")
+        return True
+    except Exception as e:
+        print(f"Error storing visualizations in Snowflake: {e}")
+        return False
 
 # -------------------------
 # Graph Compiler

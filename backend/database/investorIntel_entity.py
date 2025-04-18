@@ -1,4 +1,4 @@
-from backend.database.snowflake_connect import account_login
+from .snowflake_connect import account_login
 from dotenv import load_dotenv
 
 load_dotenv()

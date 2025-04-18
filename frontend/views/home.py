@@ -4,6 +4,7 @@ import os
 from PIL import Image
 import base64
 import sys
+import json
 
 FAST_API_URL = "http://localhost:8000"
 
@@ -26,7 +27,7 @@ def render():
     # 🚪 Left Sidebar – Role Selection
     with col1:
         # 🔷 Add Logo
-        logo_path = os.path.join("frontend/assets", "InvestorIntel_Logo.png")
+        logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "InvestorIntel_Logo.png"))
         logo = Image.open(logo_path)
         # Convert image to base64
         with open(logo_path, "rb") as f:
@@ -85,25 +86,40 @@ def render():
 
             # Form fields
             st.session_state.startup_name = st.text_input("Startup Name", value=st.session_state.startup_name)
-            st.session_state.email_address = st.text_input("Contact Email", value=st.session_state.email_address)
+            
+            # Email validation
+            email = st.text_input("Contact Email", value=st.session_state.email_address)
+            if email and not ("@" in email and "." in email.split("@")[1]):
+                st.warning("Please enter a valid email address")
+            st.session_state.email_address = email
+            
             st.session_state.valuation_ask = st.number_input("Valuation Ask (USD)", min_value=0.0, format="%.2f", value=st.session_state.valuation_ask)
-            st.session_state.industry = st.text_input("Industry", value=st.session_state.industry)
+            
+            # Industry dropdown
+            industries = ["AI", "Healthcare", "Tech Services", "Automotive", "Defense", "Entertainment", "Renewable Energy", "Fintech", "E-commerce", "Education"]
+            st.session_state.industry = st.selectbox("Industry", options=industries, index=0 if not st.session_state.industry else industries.index(st.session_state.industry) if st.session_state.industry in industries else 0)
 
             if not st.session_state.pitch_deck_uploaded:
                 uploaded_file = st.file_uploader("Upload Pitch Deck", type=["pdf"])
                 if uploaded_file:
                     st.session_state.pitch_deck_file = uploaded_file
 
-            st.session_state.website_url = st.text_input("Website URL", value=st.session_state.website_url)
+            # Website URL validation
+            website_url = st.text_input("Website URL", value=st.session_state.website_url)
+            if website_url and not (website_url.startswith("http://") or website_url.startswith("https://")):
+                st.warning("Website URL should start with http:// or https://")
+            st.session_state.website_url = website_url
 
-            # investor_options = investorIntel_entity.get_all_investor_usernames()
-            resp = requests.get(f"{FAST_API_URL}/fetch-investor-usernames")
-            print(resp)
-            if resp.status_code == 200:
-                investor_options = resp.json()       # <-- this is your List[str]
-            else:
-                st.error("Could not load investor list.")
-                investor_options = []
+            # Cache investor options to prevent repeated API calls
+            if "cached_investor_options" not in st.session_state:
+                resp = requests.get(f"{FAST_API_URL}/fetch-investor-usernames")
+                if resp.status_code == 200:
+                    st.session_state.cached_investor_options = resp.json()
+                else:
+                    st.error("Could not load investor list.")
+                    st.session_state.cached_investor_options = []
+            
+            investor_options = st.session_state.cached_investor_options
 
             # ensure session_state.investors is always a list
             if not isinstance(st.session_state.get("investors"), list):
@@ -176,12 +192,17 @@ def render():
                     value=st.session_state.founder_names[i],
                     key=f"founder_name_{i}"
                 )
-                st.session_state.founder_linkedin_urls[i] = col_linkedin.text_input(
+                
+                # LinkedIn URL validation
+                linkedin_url = col_linkedin.text_input(
                     f"Founder #{i+1} LinkedIn URL",
                     value=st.session_state.founder_linkedin_urls[i],
                     key=f"founder_linkedin_{i}"
                 )
-                
+                if linkedin_url and not linkedin_url.startswith("https://www.linkedin.com/"):
+                    col_linkedin.warning("Please enter a valid LinkedIn URL (https://www.linkedin.com/...)")
+                st.session_state.founder_linkedin_urls[i] = linkedin_url
+
             # Handle submit
             if st.button("Submit"):
                 missing = []
@@ -229,7 +250,7 @@ def render():
                                 st.session_state.founder_linkedin_urls
                             )
                         ]
-                        # Save the pitch deck file
+                        # Save the startup info
                         requests.post(
                             f"{FAST_API_URL}/add-startup-info",
                             json={
@@ -242,6 +263,31 @@ def render():
                                 "founder_list": founder_list
                             }
                         )
+                        
+                        # Also process the pitch deck file
+                        if st.session_state.pitch_deck_file:
+                            # Prepare founder LinkedIn URLs
+                            linkedin_urls_json = json.dumps(st.session_state.founder_linkedin_urls)
+                            
+                            # Create form data for file upload
+                            files = {"file": st.session_state.pitch_deck_file}
+                            form_data = {
+                                "startup_name": st.session_state.startup_name,
+                                "industry": st.session_state.industry,
+                                "linkedin_urls": linkedin_urls_json,
+                                "website_url": st.session_state.website_url
+                            }
+                            
+                            # Submit pitch deck for processing
+                            process_resp = requests.post(
+                                f"{FAST_API_URL}/process-pitch-deck",
+                                files=files,
+                                data=form_data
+                            )
+                            
+                            if not process_resp.ok:
+                                st.warning("Pitch deck submitted but analysis encountered an issue.")
+                        
                         st.session_state.pitch_deck_uploaded = True
                         st.success("✅ Your pitch deck has been submitted successfully! Our team or investors will reach out to you if there's a fit. 🚀")
 

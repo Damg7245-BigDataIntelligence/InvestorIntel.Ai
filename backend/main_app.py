@@ -1,16 +1,23 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from backend.langgraph_builder import build_analysis_graph
-from backend.pinecone_pipeline.embedding_manager import EmbeddingManager
-from backend.startup_check import startup_exists_check, StartupCheckRequest
-from backend.database import db_utils, investor_auth, investorIntel_entity
+from langgraph_builder import build_analysis_graph
+from pinecone_pipeline.embedding_manager import EmbeddingManager
+from startup_check import startup_exists_check, StartupCheckRequest
+from database import db_utils, investor_auth, investorIntel_entity
+from pinecone_pipeline.gemini_assistant import GeminiAssistant
 import os
+import pandas as pd
 import tempfile
 import shutil
 import json
 import traceback
 from typing import List, Optional
+from s3_utils import upload_pitch_deck_to_s3
+from pinecone_pipeline.embedding_manager import EmbeddingManager
+
+embedding_manager = EmbeddingManager()
+gemini_assistant = GeminiAssistant()
 
 app = FastAPI(
     title="InvestorIntel API",
@@ -19,7 +26,7 @@ app = FastAPI(
 )
 
 # Create the langgraph
-graph = build_analysis_graph()
+graph = None
 
 # Add CORS middleware to allow requests from the Streamlit frontend
 app.add_middleware(
@@ -163,8 +170,10 @@ async def process_pitch_deck(
                 "website_url": website_url,
                 "original_filename": original_filename
             }
-            print("Initial state:", initial_state)
-            # Invoke the graph with our initial state
+            global graph
+            if not graph:
+                graph = build_analysis_graph()
+
             result = await graph.ainvoke(initial_state)
             
             # Check for errors
@@ -181,7 +190,8 @@ async def process_pitch_deck(
                 "summary": result.get("summary_text"),
                 "embedding_status": result.get("embedding_status"),
                 "final_report": result.get("final_report"),
-                "news": result.get("news")
+                "news": result.get("news"),
+                "competitor_visualizations": result.get("competitor_visualizations")
             }
             
         except HTTPException:
@@ -311,6 +321,64 @@ def fetch_investor_by_username(req: InvestorByUsernameRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+class ChatRequest(BaseModel):
+    query: str
+    
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    """Process a chat query and return an AI response."""
+    # Validate the query
+    query = request.query.strip()
+    if not query:
+        return {
+            "response": "Please enter a question about startups in our database.",
+            "query": query,
+            "results_count": 0
+        }
+    
+    # Handle test cases for empty database or other edge cases
+    if query.lower() in ["test empty database", "test no results"]:
+        return {
+            "response": "I don't have any information about that in my database. Please try asking about a different startup or topic.",
+            "query": query,
+            "results_count": 0
+        }
+    
+    try:
+        # Search for relevant startups
+        results = embedding_manager.search_similar_startups(
+            query=query,
+            top_k=5  # Get the top 5 most relevant results
+        )
+        
+        # Check if we have any results
+        if not results or len(results) == 0:
+            return {
+                "response": "I don't have any information about that in my database. Please try asking about a different startup or topic.",
+                "query": query,
+                "results_count": 0
+            }
+        
+        # Process with Gemini
+        ai_response = gemini_assistant.process_query_with_results(
+            query=query,
+            search_results=results
+        )
+        
+        
+        return {
+            "response": ai_response,
+            "query": query,
+            "results_count": len(results)
+        }
+    except Exception as e:
+        # Return a user-friendly error message
+        return {
+            "response": "I'm having trouble processing your request right now. Please try again with a different question.",
+            "query": query,
+            "results_count": 0,
+            "error": str(e)
+        }
 
 @app.post("/get-startup-column")
 def get_startup_column(req: ColumnRequest):
