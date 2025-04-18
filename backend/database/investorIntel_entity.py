@@ -176,7 +176,7 @@ def get_all_investor_usernames():
         return formatted_options
     except Exception as e:
         print(f"❌ Failed to fetch investor usernames: {e}")
-        return [], {}
+        return []
 
     
 
