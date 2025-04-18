@@ -2,27 +2,36 @@ import pytest
 from unittest.mock import patch, MagicMock
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fastapi.testclient import TestClient
 
-# Mock Supabase and other external dependencies before importing modules that use them
-mock_supabase = MagicMock()
-mock_log_interaction = MagicMock()
+# Add mocks directory to path so we can import our mocks
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mocks'))
 
-# Apply patches
-patches = [
-    patch('database.log_gemini_interaction.create_client', return_value=mock_supabase),
-    patch('database.log_gemini_interaction.log_gemini_interaction', mock_log_interaction),
-    patch('langgraph_builder.log_gemini_interaction', mock_log_interaction)
-]
+# Mock the database module
+from .mocks import database_mock
+sys.modules['database'] = MagicMock()
+sys.modules['database.log_gemini_interaction'] = database_mock
 
-for p in patches:
-    p.start()
+# Set environment variables
+os.environ.update({
+    "SUPABASE_URL": "https://example.supabase.co",
+    "SUPABASE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3aXNqZWNuc3lvZ2VoYWZmcWpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NzI3MzgxMDYsImV4cCI6MTk4ODMxNDEwNn0.mock_key",
+    "AWS_ACCESS_KEY_ID": "dummy",
+    "AWS_SECRET_ACCESS_KEY": "dummy",
+    "AWS_S3_BUCKET_NAME": "dummy",
+    "AWS_REGION": "us-east-1",
+    "GEMINI_API_KEY": "dummy",
+    "PINECONE_API_KEY": "dummy",
+    "SNOWFLAKE_USER": "dummy",
+    "SNOWFLAKE_PASSWORD": "dummy",
+    "SNOWFLAKE_ACCOUNT": "dummy",
+    "SNOWFLAKE_WAREHOUSE": "dummy",
+    "SNOWFLAKE_DATABASE": "INVESTOR_INTEL_DB",
+    "SNOWFLAKE_ROLE": "dummy",
+})
 
 # Now import the modules that depend on these
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from fastapi.testclient import TestClient
 from main import app
 from s3_utils import generate_presigned_url, upload_pitch_deck_to_s3
 from vector_storage_service import get_embedding_model, generate_embeddings

@@ -4,7 +4,7 @@ import os
 import sys
 from unittest.mock import patch, MagicMock, AsyncMock
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
 sys.path.append(project_root)
 
 from main import app
@@ -64,3 +64,15 @@ def test_process_pitch_deck_integration(setup_environment):
     assert data["s3_location"] == "https://mock-s3.com/pitchdeck.pdf"
     assert data["summary"] == "This is a mocked summary."
     assert data["final_report"] == "This is a mocked final report."
+
+def test_startup_exists_check_integration(setup_environment, mock_graph_and_deps):
+    """Test the startup check endpoint"""
+    # Patch the startup_exists_check function directly
+    with patch('main.startup_exists_check', return_value={"exists": True}):
+        response = client.post(
+            "/check-startup-exists",
+            json={"startup_name": "TestStartup"}
+        )
+        
+        assert response.status_code == 200
+        assert response.json().get("exists") is True
