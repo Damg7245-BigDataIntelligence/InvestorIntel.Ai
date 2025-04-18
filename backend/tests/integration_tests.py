@@ -1,12 +1,40 @@
 import pytest
-from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock, AsyncMock
 import os
 import sys
-from unittest.mock import patch, MagicMock, AsyncMock
 
+# First, set up the mock environment variables
+os.environ["SUPABASE_URL"] = "https://example.supabase.co"
+os.environ["SUPABASE_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3aXNqZWNuc3lvZ2VoYWZmcWpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NzI3MzgxMDYsImV4cCI6MTk4ODMxNDEwNn0.mock_key"
+
+# Mock the Supabase client before any imports that use it
+sys.modules['supabase'] = MagicMock()
+sys.modules['supabase._sync.client'] = MagicMock()
+sys.modules['supabase._sync.client'].create_client = MagicMock()
+sys.modules['supabase._sync.client'].Client = MagicMock()
+
+# Add project root to path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
 sys.path.append(project_root)
 
+# Set up other environment variables
+os.environ.update({
+    "AWS_ACCESS_KEY_ID": "test",
+    "AWS_SECRET_ACCESS_KEY": "test",
+    "AWS_S3_BUCKET_NAME": "test-bucket",
+    "AWS_REGION": "us-east-1",
+    "GEMINI_API_KEY": "dummy",
+    "PINECONE_API_KEY": "dummy",
+    "SNOWFLAKE_USER": "test",
+    "SNOWFLAKE_PASSWORD": "test",
+    "SNOWFLAKE_ACCOUNT": "test",
+    "SNOWFLAKE_WAREHOUSE": "test",
+    "SNOWFLAKE_DATABASE": "test_db",
+    "SNOWFLAKE_ROLE": "test_role"
+})
+
+# Now you can safely import from main
+from fastapi.testclient import TestClient
 from main import app
 
 client = TestClient(app)
@@ -19,16 +47,7 @@ SAMPLE_WEBSITE_URL = "https://teststartup.com"
 
 @pytest.fixture(scope="module")
 def setup_environment():
-    os.environ["AWS_ACCESS_KEY_ID"] = "test"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "test"
-    os.environ["AWS_S3_BUCKET_NAME"] = "test-bucket"
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["SNOWFLAKE_USER"] = "test"
-    os.environ["SNOWFLAKE_PASSWORD"] = "test"
-    os.environ["SNOWFLAKE_ACCOUNT"] = "test"
-    os.environ["SNOWFLAKE_WAREHOUSE"] = "test"
-    os.environ["SNOWFLAKE_DATABASE"] = "test_db"
-    os.environ["SNOWFLAKE_ROLE"] = "test_role"
+    # Environment variables already set up above
     yield
 
 @pytest.fixture(autouse=True)
