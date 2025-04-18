@@ -143,7 +143,8 @@ async def process_pitch_deck(
                 "summary": result.get("summary_text"),
                 "embedding_status": result.get("embedding_status"),
                 "final_report": result.get("final_report"),
-                "news": result.get("news")
+                "news": result.get("news"),
+                "competitor_visualizations": result.get("competitor_visualizations")
             }
             
         except HTTPException:

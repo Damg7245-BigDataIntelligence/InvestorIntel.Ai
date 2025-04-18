@@ -23,7 +23,7 @@ class SnowflakeManager:
             raise ValueError("Missing required Snowflake credentials")
             
         # Initialize Snowflake objects
-        self.initialize_snowflake_objects()
+        # self.initialize_snowflake_objects()
         
     def get_connection(self):
         """Create and return a Snowflake connection"""
@@ -36,40 +36,41 @@ class SnowflakeManager:
             database=self.database
         )
         
-    def initialize_snowflake_objects(self):
-        """Initialize Snowflake database, schema, and table"""
-        conn = self.get_connection()
-        cur = conn.cursor()
+    # def initialize_snowflake_objects(self):
+    #     """Initialize Snowflake database, schema, and table"""
+    #     conn = self.get_connection()
+    #     cur = conn.cursor()
         
-        try:
-            cur.execute("USE DATABASE INVESTOR_INTEL_DB")
-            # Create schema if not exists
-            cur.execute("""
-            CREATE SCHEMA IF NOT EXISTS PITCH_DECKS
-            """)
+    #     try:
+    #         cur.execute("USE DATABASE INVESTOR_INTEL_DB")
+    #         # Create schema if not exists
+    #         cur.execute("""
+    #         CREATE SCHEMA IF NOT EXISTS STARTUP_INFORMATION
+    #         """)
             
-            # Create table if not exists
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS PITCH_DECKS.STARTUP_SUMMARY (
-                STARTUP_ID VARCHAR(36) PRIMARY KEY,
-                STARTUP_NAME VARCHAR(255) NOT NULL UNIQUE,
-                INDUSTRY VARCHAR(255),
-                SHORT_DESCRIPTION TEXT,
-                ANALYSIS_REPORT TEXT,
-                NEWS TEXT,
-                WEBSITE_URL VARCHAR(1000),
-                S3_LOCATION VARCHAR(1000),
-                ORIGINAL_FILENAME VARCHAR(255),
-                CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-                UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-            )
-            """)
+    #         # Create table if not exists
+    #         cur.execute("""
+    #         CREATE TABLE IF NOT EXISTS STARTUP_INFORMATION.STARTUP (
+    #             STARTUP_ID VARCHAR(36) PRIMARY KEY,
+    #             STARTUP_NAME VARCHAR(255) NOT NULL UNIQUE,
+    #             INDUSTRY VARCHAR(255),
+    #             SHORT_DESCRIPTION TEXT,
+    #             ANALYSIS_REPORT TEXT,
+    #             NEWS TEXT,
+    #             WEBSITE_URL VARCHAR(1000),
+    #             S3_LOCATION VARCHAR(1000),
+    #             ORIGINAL_FILENAME VARCHAR(255),
+    #             CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    #             UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+    #         )
+    #         """)
                         
-        except Exception as e:
-            raise
-        finally:
-            cur.close()
-            conn.close()
+    #     except Exception as e:
+    #         raise
+    #     finally:
+    #         cur.close()
+    #         conn.close()
+            
             
     def store_startup_summary(self, 
                             startup_name: str,
@@ -101,7 +102,7 @@ class SnowflakeManager:
             
             # Insert the summary into Snowflake
             cur.execute("""
-            INSERT INTO INVESTOR_INTEL_DB.PITCH_DECKS.STARTUP_SUMMARY (
+            INSERT INTO INVESTOR_INTEL_DB.STARTUP_INFORMATION.STARTUP (
                 STARTUP_ID,
                 STARTUP_NAME,
                 INDUSTRY,
