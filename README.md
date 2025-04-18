@@ -7,7 +7,7 @@ The InvestorIntel project is designed to enhance and streamline the startup eval
 ---
 
 ## **📌 Project Resources**
-- **Streamlit:** [Application Link](http://34.85.173.233:8501/)
+- **Streamlit:** [Application Link](https://investorintelai-deployment.streamlit.app/)
 - **Airflow Dashboard:** [Airflow Link](http://34.44.200.7:8080/)
 - **Backend:** [Backend Link](https://investorintel-backend-299824117494.us-east4.run.app/)
 - **Demo Video:** [YouTube Demo](https://youtu.be/Fjgoe4PK9Uc)
