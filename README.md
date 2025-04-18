@@ -33,7 +33,7 @@ The InvestorIntel project is designed to enhance and streamline the startup eval
 
 ## **📌 Architecture Diagram**
 <p align="center">
-  <img src="https://github.com/Damg7245-BigDataIntelligence/Agentic_Research_Assistant/blob/main/Diagram/MultiAgent_AI_Nvidia_LangGraph.png" alt="Architecture Diagram" width="600">
+  <img src="https://github.com/Damg7245-BigDataIntelligence/InvestorIntel.Ai/blob/main/architecture-diagram/investorintel_architecture.png" alt="Architecture Diagram" width="600">
 </p>
 
 ---
