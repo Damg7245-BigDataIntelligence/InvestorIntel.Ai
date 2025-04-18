@@ -11,7 +11,7 @@ from main import app
 
 client = TestClient(app)
 
-SAMPLE_PDF_PATH = "backend/tests/test_data/sample_pitch_deck.pdf"
+SAMPLE_PDF_PATH = "tests/test_data/sample_pitch_deck.pdf"
 SAMPLE_STARTUP_NAME = "TestStartup"
 SAMPLE_INDUSTRY = "AI"
 SAMPLE_LINKEDIN_URLS = '["https://linkedin.com/in/test"]'
