@@ -37,7 +37,66 @@ The InvestorIntel project is designed to enhance and streamline the startup eval
 </p>
 
 ---
+## **📌 Installation & Setup Guide**
 
+### **Step 1: Clone the Repository**
+```bash
+git clone https://github.com/Damg7245-BigDataIntelligence/InvestorIntel.Ai.git
+cd InvestorIntel
+```
+
+### **Step 2: Set Up Environment Variables**
+Create a `.env` file in the root directory with the following variables:
+```
+# Snowflake Configuration
+SNOWFLAKE_ACCOUNT=your_snowflake_account
+SNOWFLAKE_USER=your_snowflake_user
+SNOWFLAKE_PASSWORD=your_snowflake_password
+SNOWFLAKE_ROLE=ACCOUNTADMIN
+SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+SNOWFLAKE_DATABASE=INVESTOR_INTEL_DB
+
+# AWS Configuration
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
+AWS_REGION=us-east-1
+AWS_S3_BUCKET_NAME=pitchdeckpdf
+
+# API Keys
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_API_KEY=your_gemini_api_key
+MISTRAL_API_KEY=your_mistral_api_key
+PINECONE_API_KEY=your_pinecone_api_key
+```
+
+### **Step 3: Set Up Virtual Environment**
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows, use: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### **Step 4: Start Airflow**
+```bash
+cd airflow
+docker-compose up -d
+```
+Access the Airflow dashboard at http://localhost:8080
+
+### **Step 5: Start FastAPI Backend**
+```bash
+cd backend
+uvicorn main:app --reload
+```
+The API will be available at http://localhost:8000
+
+### **Step 6: Start Streamlit Frontend**
+```bash
+cd frontend
+streamlit run main_app.py
+```
+The Streamlit application will be available at http://localhost:8501
+----------------
 ## **📌 Project Flow**
 
 InvestorIntel operates through a sophisticated multi-agent system that serves both startup founders and investors through different login interfaces:
@@ -70,7 +129,7 @@ When investors log in, the LangGraph-powered multi-agent system activates, provi
 - Stores and indexes this data in both Snowflake and Pinecone for contextual retrieval
 
 #### **4. Web Search Agent**
-- Gathers live news and web trends via MCP Server custom query
+- Gathers live news and web trends via Tavily/SerpAPI/Google Trends
 - Enhances trend insights and competitor monitoring
 - Provides real-time market intelligence to supplement stored data
 
