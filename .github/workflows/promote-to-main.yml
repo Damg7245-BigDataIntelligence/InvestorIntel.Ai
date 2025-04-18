@@ -1,0 +1,29 @@
+name: Promote to Main
+
+on:
+  workflow_run:
+    workflows: ["Test Backend"]
+    branches: [dev]
+    types: [completed]
+
+jobs:
+  promote:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+      - name: Merge dev into main
+        run: |
+          git fetch origin dev
+          git merge origin/dev --no-ff -m "Auto-merge dev into main"
+          git push
