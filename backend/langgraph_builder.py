@@ -8,6 +8,8 @@ from pinecone_pipeline.embedding_manager import EmbeddingManager
 from s3_utils import upload_pitch_deck_to_s3
 import snowflake.connector
 from pinecone_pipeline.mcp_google_search_agent import google_search_with_fallback
+import datetime
+from database.log_gemini_interaction import log_gemini_interaction
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -264,22 +266,61 @@ def generate_report(state):
     if not state.get("summary") or not state.get("industry_report") or not state.get("competitors"):
         state["final_report"] = "Unable to generate report: Missing required data"
         return state
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    
+    # Extract key information for logging
+    startup_name = state["summary"].get("STARTUP_NAME", "Unknown")
+    industry = state["summary"].get("INDUSTRY", "Unknown")
+    model_name = "gemini-2.0-flash"
+    
+    # Start timing for response time measurement
+    start_time = datetime.datetime.now()
+    
+    # Generate the prompt and response
+    model = genai.GenerativeModel(model_name)
     prompt = generate_gemini_prompt(
         startup=state["summary"],
         industry_report=state["industry_report"],
         competitors=state["competitors"]
     )
+    
+    # Generate the content
     response = model.generate_content(prompt)
     final_report = response.text
+    
+    # Calculate response time
+    end_time = datetime.datetime.now()
+    response_time_ms = int((end_time - start_time).total_seconds() * 1000)
+    
+    # Create session ID (optional - you can use this to group related calls)
+    session_id = f"report-{startup_name}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    
+    # Get tokens if available (may not be available in all model versions)
+    tokens_used = None
+    if hasattr(response, 'usage') and response.usage:
+        tokens_used = response.usage.total_tokens
+    
+    # Log the Gemini interaction
+    log_gemini_interaction(
+        startup_name=startup_name,
+        industry=industry,
+        model=model_name,
+        prompt=prompt,
+        response=final_report,
+        response_time_ms=response_time_ms,
+        tokens_used=tokens_used,
+        session_id=session_id
+    )
+    print("Final report generated and logged")
     state["final_report"] = final_report
     return state
 
 def store_report(state):
+    print("Storing report")
     if not state.get("startup_name") or not state.get("final_report"):
         return state
         
     store_analysis_report(state["startup_name"], state["final_report"])
+    print("Report stored")
     return state
 
 async def fetch_news(state):
