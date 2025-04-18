@@ -171,10 +171,9 @@ def get_all_investor_usernames():
 
         # Format: "username (First Last)"
         formatted_options = [f"{row[0]} ({row[1]} {row[2]})" for row in results]
-        username_mapping = {f"{row[0]} ({row[1]} {row[2]})": row[0] for row in results}
 
         print("✅ Investor usernames fetched successfully.")
-        return formatted_options, username_mapping
+        return formatted_options
     except Exception as e:
         print(f"❌ Failed to fetch investor usernames: {e}")
         return [], {}
