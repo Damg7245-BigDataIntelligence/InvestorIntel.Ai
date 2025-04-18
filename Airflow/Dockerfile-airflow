@@ -1,0 +1,19 @@
+FROM apache/airflow:2.10.5
+
+USER root
+
+# Add Docker group and give Airflow access to Docker socket
+RUN groupadd --gid 999 docker && usermod -aG docker airflow
+
+# Switch to airflow user before pip install
+USER airflow
+
+# Install required Python packages as airflow user
+RUN pip install --no-cache-dir selenium docker bs4 lxml
+
+# Switch back to root to create the downloads folder
+USER root
+RUN mkdir -p /usr/local/airflow/downloads && chown airflow:docker /usr/local/airflow/downloads
+
+# Set back to airflow for rest of container life
+USER airflow

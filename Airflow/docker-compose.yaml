@@ -49,8 +49,9 @@ x-airflow-common:
   # In order to add custom dependencies or upgrade provider packages you can use your extended image.
   # Comment the image line, place your Dockerfile in the directory where you placed the docker-compose.yaml
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
-  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.10.5}
-  # build: .
+  build:
+    context: .
+    dockerfile: Dockerfile-airflow
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -68,7 +69,7 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- snowflake-connector-python selenium webdriver_manager bs4}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- apache-airflow-providers-snowflake==3.3.0 selenium==4.18.1 webdriver_manager bs4}
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
     # AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
@@ -152,6 +153,12 @@ services:
   airflow-worker:
     <<: *airflow-common
     command: celery worker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - downloads:/usr/local/airflow/downloads
+    networks:
+      - default
+      - container_bridge
     healthcheck:
       # yamllint disable rule:line-length
       test:
@@ -286,5 +293,25 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  selenium:
+    image: selenium/standalone-chrome
+    platform: linux/amd64
+    container_name: selenium
+    networks:
+      - default
+      - container_bridge
+    ports:
+      - "4444:4444"
+    shm_size: '2gb'  # important for Chrome stability
+    volumes:
+      - downloads:/home/seluser/Downloads
+
+networks:
+  default:
+  container_bridge:
+    external: true
+
 volumes:
   postgres-db-volume:
+  downloads:
+    external: true
