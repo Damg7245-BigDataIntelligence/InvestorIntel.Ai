@@ -10,7 +10,7 @@ import json
 import re
 import plotly.express as px
 
-FAST_API_URL = "http://localhost:8000"
+FAST_API_URL = "https://investorintel-backend-x4s2izvkca-uk.a.run.app/"
 
 # Define status options at the module level
 STATUS_OPTIONS = {

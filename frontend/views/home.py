@@ -6,7 +6,7 @@ import base64
 import sys
 import json
 
-FAST_API_URL = "http://localhost:8000"
+FAST_API_URL = "https://investorintel-backend-x4s2izvkca-uk.a.run.app/"
 
 # Dynamically add project root (InvestorIntel.Ai/) to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))

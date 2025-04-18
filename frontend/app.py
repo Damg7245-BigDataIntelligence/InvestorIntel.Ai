@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import plotly.io as pio
 
-FAST_API_URL = "http://localhost:8000"
+FAST_API_URL = "https://investorintel-backend-x4s2izvkca-uk.a.run.app/"
 
 # Set page configuration
 st.set_page_config(
